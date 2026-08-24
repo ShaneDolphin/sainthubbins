@@ -1,3 +1,16 @@
+```
+ ____      _     ___  _   _  _____
+/ ___|    / \   |_ _|| \ | ||_   _|
+\___ \   / _ \   | | |  \| |  | |
+ ___) | / ___ \  | | | |\  |  | |
+|____/ /_/   \_\|___||_| \_|  |_|
+ _   _  _   _  ____   ____   ___  _   _  ____
+| | | || | | || __ ) | __ ) |_ _|| \ | |/ ___|
+| |_| || | | ||  _ \ |  _ \  | | |  \| |\___ \
+|  _  || |_| || |_) || |_) | | | | |\  | ___) |
+|_| |_| \___/ |____/ |____/ |___||_| \_||____/
+```
+
 # Saint Hubbins — Go-Native Live Coding Pattern Engine
 
 Saint Hubbins is a Go-native environment for algorithmic music and live coding. Patterns are pure functions of time — `Pattern` values queried over rational time spans — that emit sound, MIDI, and visual events. The system includes a pattern engine, a compact text notation, a control vocabulary, offline audio rendering, and a live console served from a single Go binary.
