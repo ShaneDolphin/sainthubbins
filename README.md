@@ -251,7 +251,7 @@ haps := pat.Query(core.NewState(span))
 | `*n` / `/n` | Speed up / slow down token | `bd*2`, `bd/2` |
 | `(p,s)` / `(p,s,r)` | Euclidean Bjorklund | `bd(3,8)`, `bd(3,8,2)` |
 | `@n` | Elongate / weight | `bd@2` |
-| `!` / `!n` | Repeats within the token's own slot (not four equal steps) | `bd!2` |
+| `!` / `!n` | Replicate | `bd!2` |
 | `?` / `?n` | Degrade chance | `bd?0.5` |
 | `[a b]` | Subsequence (group) | `[bd sd]*2` |
 | `<a b>` | Alternate each cycle | `<bd sd>` |

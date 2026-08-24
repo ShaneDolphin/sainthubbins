@@ -55,6 +55,17 @@ than beat 2 — and, in dubstep, it is most of the composition.
 `*` divides the item's own slot, so `"bd*4"` fills the bar but `"bd*2 sd"`
 squeezes two kicks into the first half only.
 
+### Replicate — `!`
+
+```
+"bd!3 sd"        four equal quarters: bd, bd, bd, sd
+```
+
+`!n` adds `n` copies of the item as siblings in the sequence, so `"bd!3 sd"`
+is exactly the same as writing out `"bd bd bd sd"` — unlike `*`, it does not
+stay confined to the item's own slot. A bare `!` with no number doubles the
+item.
+
 ### Slow — `/`
 
 ```
@@ -144,16 +155,6 @@ The sequences have different lengths and drift against each other.
 "0 .. 3"         0 1 2 3 as four steps
 ```
 
-## One difference from Strudel
-
-If you are coming from Strudel or Tidal, this does not behave as you expect.
-
-**`!` subdivides in place rather than adding steps.** `"bd!3 sd"` puts three
-kicks inside the *first half* of the bar (at 0, 1/6, 1/3), where Strudel would
-give four equal quarters. If you want four equal steps, write `"bd bd bd sd"`.
-
-This is listed in [Limitations](08-limitations.md).
-
 ## Reference
 
 | Syntax | Meaning | Example |
@@ -162,6 +163,7 @@ This is listed in [Limitations](08-limitations.md).
 | `@n` | weight (share of the bar) | `bd@3 sd` |
 | `~` | rest | `bd ~ sd ~` |
 | `*n` | repeat n times | `bd*4` |
+| `!n` | replicate as sibling steps | `bd!3 sd` |
 | `/n` | play every n cycles | `bd/2` |
 | `[ ]` | group | `bd [sd sd]` |
 | `,` | stack / chord | `[bd, hh]`, `[c3,e3,g3]` |

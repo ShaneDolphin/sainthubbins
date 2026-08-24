@@ -89,3 +89,34 @@ func TestMiniBracketedSingleTokenWeightStripsValue(t *testing.T) {
 		t.Errorf("no clean %q hap found: %v", "bd", haps)
 	}
 }
+
+func TestMiniReplicateAddsEqualSteps(t *testing.T) {
+	p := Mini("bd!3 sd")
+	haps := p.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	if len(haps) != 4 {
+		t.Fatalf("got %d haps, want 4", len(haps))
+	}
+	want := []float64{0, 0.25, 0.5, 0.75}
+	for i, w := range want {
+		if got := haps[i].Part.Begin.Float64(); got != w {
+			t.Errorf("hap %d begins at %v, want %v", i, got, w)
+		}
+	}
+	if v, _ := haps[3].Value.(string); v != "sd" {
+		t.Errorf("last hap is %v, want sd", haps[3].Value)
+	}
+}
+
+func TestMiniReplicateMatchesWritingItOut(t *testing.T) {
+	a := Mini("bd!3 sd").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	b := Mini("bd bd bd sd").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	if len(a) != len(b) {
+		t.Fatalf("!3 gave %d haps, writing it out gave %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i].Part.Begin.Float64() != b[i].Part.Begin.Float64() {
+			t.Errorf("hap %d: !3 at %v, written out at %v",
+				i, a[i].Part.Begin.Float64(), b[i].Part.Begin.Float64())
+		}
+	}
+}

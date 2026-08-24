@@ -129,11 +129,16 @@ func parseSequence(input string) core.Pattern {
 		if tok == ".." || tok == "|" || tok == "," {
 			continue
 		}
-		base, w := splitWeight(tok)
+		base, reps := splitReplicate(tok)
+		base, w := splitWeight(base)
 		if w != 1 {
 			weightedAny = true
 		}
-		weighted = append(weighted, w, parseToken(base))
+		// A replicated step becomes that many sibling steps, so "bd!3 sd" is
+		// four equal quarters rather than three kicks crammed into one slot.
+		for i := 0; i < reps; i++ {
+			weighted = append(weighted, w, parseToken(base))
+		}
 	}
 	if len(weighted) == 0 {
 		return core.Silence()
@@ -168,6 +173,24 @@ func splitWeight(tok string) (string, float64) {
 		return tok[:i], 1
 	}
 	return tok[:i], w
+}
+
+// splitReplicate separates a trailing !n from a token. "bd!3" yields ("bd", 3);
+// a bare "bd!" yields ("bd", 2). A token with no ! yields a count of 1.
+func splitReplicate(tok string) (string, int) {
+	i := indexAtDepth0(tok, "!")
+	if i <= 0 {
+		return tok, 1
+	}
+	rest := strings.TrimSpace(tok[i+1:])
+	if rest == "" {
+		return tok[:i], 2
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 1 {
+		return tok[:i], 1
+	}
+	return tok[:i], n
 }
 
 func splitMiniTokens(s string) []string {
@@ -445,10 +468,11 @@ func parseToken(tok string) core.Pattern {
 			return base
 		}
 	}
-	// Handle weight @: "bd@2" or "bd:3@2" etc — handle suffix @N and _N and ! and ?
-	// Strip trailing modifiers: @/_ weight, ! replicate, ? degrade
-	// For full PEG parity, these would be ElementStub ops; here we simplify to repeats/weights
-	if containsAtDepth0(tok, "@_!?") {
+	// Handle suffix modifiers _N and ?. @ weight and ! replicate are both
+	// handled by parseSequence instead: @ needs sibling steps' relative
+	// durations, and ! needs to add sibling steps of its own, so neither can
+	// be resolved from a single token in isolation.
+	if containsAtDepth0(tok, "_?") {
 		// Handle degrade ? and ?0.5
 		if containsAtDepth0(tok, "?") {
 			parts := splitAtDepth0(tok, '?')
@@ -463,30 +487,7 @@ func parseToken(tok string) core.Pattern {
 			}
 			return pat.DegradeBy(prob)
 		}
-		// Handle replicate !: "bd!2" or "bd!!" etc
-		if containsAtDepth0(tok, "!") {
-			baseEnd := indexAtDepth0(tok, "!")
-			base := tok[:baseEnd]
-			rest := tok[baseEnd:]
-			reps := strings.Count(rest, "!") + 0
-			// Also handle !N
-			pat := parseToken(base)
-			// Count ! and number after
-			numStr := strings.Trim(rest, "!")
-			if numStr != "" {
-				if v, err := strconv.Atoi(numStr); err == nil {
-					reps = v
-				}
-			}
-			if reps <= 1 {
-				reps = 2
-			}
-			// Fast replicate: repeat event reps times via Ply? For mini, ! is weight-like
-			return pat.Ply(reps)
-		}
-		// Handle weight alias _: "bd_2" means weight 2 (elongate). @ is
-		// handled by parseSequence instead, since only there are the relative
-		// durations of sibling steps known.
+		// Handle weight alias _: "bd_2" means weight 2 (elongate).
 		if containsAtDepth0(tok, "_") {
 			parts := splitAtDepth0(tok, '_')
 			base := parts[0]

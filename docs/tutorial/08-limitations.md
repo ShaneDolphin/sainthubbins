@@ -51,10 +51,7 @@ into a separate project.
 
 | Syntax | Expected | Actual here |
 |--------|----------|-------------|
-| `bd!3 sd` | four equal steps | three bds inside the *first half* |
 | `{a b, c d e}%4` | four steps per cycle | **no effect** — the suffix is ignored |
-
-Workaround: write repeats out in full (`"bd bd bd sd"`) instead of using `!`.
 
 ## `Struct` needs Go booleans
 
@@ -103,8 +100,8 @@ HTTP instead. The WASM target builds and is unused.
 So the list above does not leave the wrong impression, these are dependable:
 
 - Exact rational timing. Events that should coincide always do; nothing drifts.
-- The mini-notation grammar in [chapter 2](02-mini-notation.md), minus the three
-  rows above.
+- The mini-notation grammar in [chapter 2](02-mini-notation.md), minus the row
+  above.
 - Every transformation in [chapter 5](05-transformations.md), including
   `Every` and `LastOf` across multi-cycle renders.
 - Layering with `Stack`, and control merging with `Set`.
