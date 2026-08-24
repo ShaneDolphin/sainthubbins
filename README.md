@@ -19,6 +19,32 @@ Patterns are first-class values. You compose them, transform them in time, and l
 
 ---
 
+## New here? Start with the tutorial
+
+**[docs/tutorial/](docs/tutorial/README.md)** takes you from a first sound to writing your own tracks, and ships **eight complete example tracks** you can run and edit:
+
+```console
+$ go run ./examples/house
+house.wav — 160 events over 8 bars, 16.0s, peak 0.81
+```
+
+| Style | BPM | Run |
+|-------|-----|-----|
+| House | 125 | `go run ./examples/house` |
+| Chicago House | 120 | `go run ./examples/chicago-house` |
+| Techno | 132 | `go run ./examples/techno` |
+| Minimal dubstep | 140 | `go run ./examples/minimal-dubstep` |
+| Maximal dubstep | 140 | `go run ./examples/maximal-dubstep` |
+| Drum and bass | 174 | `go run ./examples/drum-and-bass` |
+| Electronica | 110 | `go run ./examples/electronica` |
+| Trance | 138 | `go run ./examples/trance` |
+
+Each has a [line-by-line walkthrough](docs/tutorial/templates/README.md) explaining what every line does and what to change to make it your own.
+
+The tutorial also covers [building a track from scratch](docs/tutorial/06-new-song-cli.md), the [mini-notation grammar](docs/tutorial/02-mini-notation.md), and an honest list of [current limitations](docs/tutorial/08-limitations.md).
+
+---
+
 ## Features
 
 - **Pattern engine** — exact rational timing (`Fraction`), `TimeSpan`, `Hap`, `State`, and a `Pattern` type with functor / applicative / monadic composition
@@ -75,8 +101,8 @@ make fmt         # gofmt -w .
 # 1. Synthetic query — stack two sound events over 2 cycles
 go run ./cmd/saint-hubbins query
 
-# 2. Evaluate a pattern string (mini notation with controls)
-go run ./cmd/saint-hubbins eval "s(\"bd sd\")"
+# 2. Evaluate a mini-notation pattern
+go run ./cmd/saint-hubbins eval "bd sd"
 
 # 3. Start the live console server (http://localhost:8080)
 go run ./cmd/saint-hubbins serve
@@ -84,7 +110,7 @@ go run ./cmd/saint-hubbins serve
 go run ./cmd/saint-hubbins serve :3000
 
 # 4. Render 4 cycles of a pattern to a WAV file
-go run ./cmd/saint-hubbins render out.wav "s(\"bd sd hh cp\")"
+go run ./cmd/saint-hubbins render out.wav "bd sd hh cp"
 ```
 
 Open `http://localhost:8080` after `serve` — the page contains an editor with **Evaluate** and **Hush** that POST to the server.
@@ -102,14 +128,19 @@ The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Four sub
 | `serve` | `saint-hubbins serve [addr]` | Starts the console server. Default `addr` is `:8080`. |
 | `render` | `saint-hubbins render <out.wav> <code>` | Renders `<code>` for 4 cycles at 48 kHz and writes a 16-bit mono WAV |
 
-All commands register the mini string parser before evaluation, so quoted mini like `s("bd sd")` and bare mini like `"bd sd"` both work.
+`eval` and `render` accept **mini-notation** — the rhythm language documented in
+[the tutorial](docs/tutorial/02-mini-notation.md). Function-call syntax such as
+`s("bd sd")` or `.fast(2)` is *not* implemented as text: there is no script
+evaluator, so unrecognised input comes back as a literal string value. Layering,
+controls and transformations are the [Go API](docs/tutorial/03-patterns-in-go.md).
 
 Examples:
 
 ```bash
-saint-hubbins eval 's("bd ~ sd cp")'
-saint-hubbins eval 'note("c3 e3 g3").s("piano")'
-saint-hubbins render /tmp/test.wav 's("bd(3,8)")'
+saint-hubbins eval 'bd ~ sd cp'
+saint-hubbins eval 'c3 e3 g3'
+saint-hubbins eval '[bd*4, hh*8]'
+saint-hubbins render /tmp/test.wav 'bd(3,8)'
 ```
 
 ---
@@ -203,7 +234,7 @@ haps := pat.Query(core.NewState(span))
 
 ### Mini Notation
 
-`mini.Mini(string) Pattern` parses the compact language.
+`mini.Mini(string) Pattern` parses the compact language. The full, verified grammar is in [the tutorial](docs/tutorial/02-mini-notation.md).
 
 | Syntax | Meaning | Example |
 |---|---|---|
@@ -211,8 +242,8 @@ haps := pat.Query(core.NewState(span))
 | `~` | Rest / silence | `mini.Mini("bd ~ sd")` |
 | `*n` / `/n` | Speed up / slow down token | `bd*2`, `bd/2` |
 | `(p,s)` / `(p,s,r)` | Euclidean Bjorklund | `bd(3,8)`, `bd(3,8,2)` |
-| `@n` | Elongate / weight | `bd@2` |
-| `!` / `!n` | Replicate | `bd!2` |
+| `@n` | Parsed, but currently **no effect** on timing — see [limitations](docs/tutorial/08-limitations.md) | `bd@2` |
+| `!` / `!n` | Repeats within the token's own slot (not four equal steps) | `bd!2` |
 | `?` / `?n` | Degrade chance | `bd?0.5` |
 | `[a b]` | Subsequence (group) | `[bd sd]*2` |
 | `<a b>` | Alternate each cycle | `<bd sd>` |
