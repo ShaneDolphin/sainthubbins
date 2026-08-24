@@ -54,7 +54,7 @@ func main() {
 		demoRender(os.Args[2], os.Args[3])
 	case "play":
 		if len(os.Args) < 3 {
-			fmt.Println("play <code> [host] [port] [seconds]")
+			fmt.Println("play <code> [host] [port] [secs]")
 			os.Exit(1)
 		}
 		host, port, secs := "127.0.0.1", 57120, 8.0
@@ -62,14 +62,20 @@ func main() {
 			host = os.Args[3]
 		}
 		if len(os.Args) >= 5 {
-			if v, err := strconv.Atoi(os.Args[4]); err == nil {
-				port = v
+			v, err := strconv.Atoi(os.Args[4])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "play: invalid port %q: %v\n", os.Args[4], err)
+				os.Exit(1)
 			}
+			port = v
 		}
 		if len(os.Args) >= 6 {
-			if v, err := strconv.ParseFloat(os.Args[5], 64); err == nil {
-				secs = v
+			v, err := strconv.ParseFloat(os.Args[5], 64)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "play: invalid seconds %q: %v\n", os.Args[5], err)
+				os.Exit(1)
 			}
+			secs = v
 		}
 		if err := runPlay(os.Args[2], host, port, secs, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)

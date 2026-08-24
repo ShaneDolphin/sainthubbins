@@ -83,7 +83,11 @@ func timetag(t time.Time) uint64 {
 // plays a bundle at its timetag rather than on arrival, which is what lets a
 // note land on the beat despite scheduling jitter.
 func EncodeBundle(at time.Time, msgs ...[]byte) []byte {
-	out := make([]byte, 0, 64)
+	size := 16 // "#bundle\0" (8) + timetag (8)
+	for _, m := range msgs {
+		size += 4 + len(m) // length prefix + payload
+	}
+	out := make([]byte, 0, size)
 	out = append(out, padString("#bundle")...)
 	out = binary.BigEndian.AppendUint64(out, timetag(at))
 	for _, m := range msgs {

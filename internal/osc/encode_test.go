@@ -112,3 +112,24 @@ func TestEncodeBundleLayout(t *testing.T) {
 		t.Errorf("first element length prefix %d, want %d", gotLen, len(m1))
 	}
 }
+
+func TestTimetagFractionalSecond(t *testing.T) {
+	// A half second must give a fraction of exactly 0x80000000 — the top bit
+	// of the 32-bit fractional field, i.e. precisely half the field's range.
+	base := time.Unix(0, 0).UTC().Add(500 * time.Millisecond)
+	got := timetag(base)
+	frac := uint32(got & 0xffffffff)
+	if frac != 0x80000000 {
+		t.Errorf("fractional field for 0.5s = %#x, want 0x80000000", frac)
+	}
+}
+
+func TestEncodeBundleEmptyMessages(t *testing.T) {
+	got := EncodeBundle(time.Unix(0, 0).UTC())
+	if len(got) != 16 {
+		t.Errorf("empty bundle length = %d, want 16 (#bundle + timetag)", len(got))
+	}
+	if !bytes.HasPrefix(got, []byte("#bundle\x00")) {
+		t.Errorf("empty bundle must still start with #bundle, got %q", got[:8])
+	}
+}
