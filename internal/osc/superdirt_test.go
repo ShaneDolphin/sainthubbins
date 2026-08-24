@@ -146,6 +146,13 @@ func TestDirtArgsOutputsCanBeEncoded(t *testing.T) {
 			"n":    5,
 			"pan":  float32(0.5),
 		}},
+		{"control bag with a Fraction, a uint64, a bool and an unrecognised type", map[string]any{
+			"s":      "kick",
+			"dur":    core.NewFraction(1, 4), // e.g. Hap.Duration()'s clip/duration path
+			"count":  uint64(12345),
+			"legato": true,
+			"weird":  struct{ X int }{X: 1}, // must be skipped, not passed through
+		}},
 	}
 
 	for _, tt := range tests {
@@ -159,5 +166,55 @@ func TestDirtArgsOutputsCanBeEncoded(t *testing.T) {
 				t.Errorf("EncodeMessage failed for %s: %v", tt.name, err)
 			}
 		})
+	}
+}
+
+func TestDirtArgsNormalizesBagValues(t *testing.T) {
+	h := hapOf(map[string]any{
+		"s":      "kick",
+		"dur":    core.NewFraction(1, 4),
+		"count":  uint64(1 << 40),
+		"legato": true,
+		"weird":  struct{ X int }{X: 1},
+	})
+	m := pairs(t, DirtArgs(h, 0.5, 0.25))
+
+	if got, want := m["dur"], 0.25; got != want {
+		t.Errorf("dur = %v (%T), want core.Fraction converted to float64 %v", got, got, want)
+	}
+	if got, want := m["count"], int64(1<<40); got != want {
+		t.Errorf("count = %v (%T), want uint64 converted to int64 %v", got, got, want)
+	}
+	if got, want := m["legato"], int64(1); got != want {
+		t.Errorf("legato = %v (%T), want bool converted to %v", got, got, want)
+	}
+	if _, ok := m["weird"]; ok {
+		t.Error("an unrecognised bag value type should be skipped, not forwarded")
+	}
+}
+
+func TestDirtArgsSkipsBagCPSAndDelta(t *testing.T) {
+	// Cyclist deliberately reads a cps key out of the bag to retune, so a
+	// bag carrying cps is supported input — but DirtArgs always appends its
+	// own cps/delta at the end, and must not also forward the bag's copies,
+	// or SuperDirt would receive the key twice.
+	h := hapOf(map[string]any{"s": "bd", "cps": 0.9, "delta": 0.1})
+	args := DirtArgs(h, 0.5, 0.25)
+
+	count := 0
+	for i := 0; i < len(args); i += 2 {
+		if args[i] == "cps" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("cps appeared %d times in %v, want exactly 1", count, args)
+	}
+	m := pairs(t, args)
+	if m["cps"] != 0.5 {
+		t.Errorf("cps = %v, want the Cyclist-supplied 0.5, not the bag's 0.9", m["cps"])
+	}
+	if m["delta"] != 0.25 {
+		t.Errorf("delta = %v, want the event duration 0.25, not the bag's 0.1", m["delta"])
 	}
 }
