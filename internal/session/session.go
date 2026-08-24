@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"codeberg.org/uzu/saint-hubbins/internal/core"
@@ -32,6 +33,17 @@ type Session struct {
 	Pattern core.Pattern
 	Cyclist *core.Cyclist
 	sink    Sink
+
+	// OnError is called when the sink reports a per-event failure — a dial
+	// error, a write error, an encode error. Without this, sink.Play errors
+	// were discarded (`_ = sink.Play(...)`), so a bad host or an unencodable
+	// value failed silently and the tool exited 0. Only the first error is
+	// reported; every event that fails after it just increments errCount, so
+	// a pattern that fails on every tick logs one line instead of flooding
+	// the output — a caller who wants a total can read errCount.
+	OnError  func(error)
+	errOnce  sync.Once
+	errCount atomic.Int64
 }
 
 // NewSession creates a new live session (these go to eleven).
@@ -50,10 +62,21 @@ func NewSession() *Session {
 			return
 		}
 		at := time.Unix(0, int64(targetTime*1e9))
-		_ = sink.Play(h, at, cps, duration)
+		if err := sink.Play(h, at, cps, duration); err != nil {
+			s.errCount.Add(1)
+			s.errOnce.Do(func() {
+				if s.OnError != nil {
+					s.OnError(err)
+				}
+			})
+		}
 	}
 	return s
 }
+
+// ErrCount reports how many sink errors have occurred so far, including the
+// first one reported through OnError and every one suppressed after it.
+func (r *Session) ErrCount() int64 { return r.errCount.Load() }
 
 // SetSink installs the output. Passing nil silences the session.
 func (r *Session) SetSink(s Sink) {

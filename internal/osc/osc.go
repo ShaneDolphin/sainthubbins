@@ -29,6 +29,17 @@ type Client struct {
 // eagerly, and construction should not fail.
 func New(host string, port int) *Client { return &Client{Host: host, Port: port} }
 
+// Connect dials the peer eagerly and reports whether it succeeded. Callers
+// that want to fail fast — rather than discovering a bad host or port only
+// when the first event silently goes nowhere — should call this once before
+// starting a scheduler, so the dial (including any DNS resolution) happens
+// off the tick goroutine. It reuses ensure()'s lazy-dial machinery, so a
+// hostless client remains a successful no-op sink.
+func (c *Client) Connect() error {
+	_, err := c.ensure()
+	return err
+}
+
 // ensure dials on first use and again after any dial that failed, so a
 // transient failure (a DNS hiccup, SuperDirt not up yet) does not brick the
 // client for the rest of the process. Only a successful dial is cached.
@@ -80,7 +91,12 @@ func (c *Client) SendAt(at time.Time, addr string, args ...any) error {
 	return c.write(EncodeBundle(at, msg))
 }
 
-// SendSuperDirt is retained for compatibility with existing callers.
+// SendSuperDirt is a compatibility shim for callers migrating from an older
+// API; nothing in this codebase calls it anymore (runPlay sends through
+// SendAt with osc.DirtArgs's alternating key/value list). It forwards haps
+// as raw positional arguments rather than that key/value form, so most
+// calls produce an odd-length /dirt/play payload that real SuperDirt does
+// not expect — treat it as compat-only, not a production path.
 func (c *Client) SendSuperDirt(haps []interface{}) error {
 	if len(haps) == 0 {
 		return nil

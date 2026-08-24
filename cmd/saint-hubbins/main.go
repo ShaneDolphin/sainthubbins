@@ -140,8 +140,18 @@ func runPlay(code, host string, port int, seconds float64, out io.Writer) error 
 	client := osc.New(host, port)
 	defer client.Close()
 
+	// Dial eagerly, off the scheduler's tick goroutine, so a bad host or an
+	// unresolvable name is reported here rather than as a silent, dropped
+	// first event once the clock starts.
+	if err := client.Connect(); err != nil {
+		return fmt.Errorf("play: could not reach %s:%d: %w", host, port, err)
+	}
+
 	s := session.NewSession()
 	s.SetSink(&session.OSCSink{Client: client})
+	s.OnError = func(err error) {
+		fmt.Fprintf(out, "play: sink error: %v\n", err)
+	}
 	if _, err := s.Evaluate(code); err != nil {
 		return err
 	}

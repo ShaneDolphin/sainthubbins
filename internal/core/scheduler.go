@@ -21,6 +21,7 @@ type Clock struct {
 	Tick     int
 	ticker   *time.Ticker
 	stopCh   chan struct{}
+	done     chan struct{} // closed when the tick goroutine returns
 }
 
 // NewClock creates a clock with CPS.
@@ -55,12 +56,15 @@ func (c *Clock) Start(ctx context.Context, callback func(phase, duration float64
 		return
 	}
 	stop := make(chan struct{})
+	done := make(chan struct{})
 	c.stopCh = stop
+	c.done = done
 	c.mu.Unlock()
 
 	ticker := time.NewTicker(time.Duration(c.Interval * float64(time.Second)))
 	c.ticker = ticker
 	go func() {
+		defer close(done)
 		defer ticker.Stop()
 		for {
 			select {
@@ -94,10 +98,14 @@ func (c *Clock) Start(ctx context.Context, callback func(phase, duration float64
 	}()
 }
 
-// Stop halts clock.
+// Stop halts the clock and waits for its tick goroutine to actually exit
+// before returning. That matters for callers whose callback (via OnTrigger)
+// writes to something the caller reads right after Stop() — without waiting,
+// a tick already in flight when Stop() is called could still be running,
+// and racing that write against the caller's read, after Stop() had already
+// returned.
 func (c *Clock) Stop() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.stopCh != nil {
 		close(c.stopCh)
 		c.stopCh = nil
@@ -108,6 +116,13 @@ func (c *Clock) Stop() {
 	}
 	c.Tick = 0
 	c.Phase = 0
+	done := c.done
+	c.done = nil
+	c.mu.Unlock()
+
+	if done != nil {
+		<-done
+	}
 }
 
 func (c *Clock) Pause() { c.Stop() }
