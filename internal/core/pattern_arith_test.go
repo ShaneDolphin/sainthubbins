@@ -63,3 +63,28 @@ func TestAddBagPlusBagPreservesNonNumericFields(t *testing.T) {
 		t.Errorf("s = %v, want %q — non-numeric collisions must not become 0", m["s"], "sd")
 	}
 }
+
+// TestAddOnNamedNotesIsANoOp guards against a second corruption reported by
+// the coordinator: named notes ("c3", "e3", "g3" — the strings mini-notation
+// produces, kept as-is until the sound engine parses them) are not numeric,
+// so toFloat("c3") is 0 and the old arithmetic computed 0+12 for every one
+// of them, collapsing three distinct pitches to the identical wrong value
+// (note:12, note:12, note:12). Add must leave a non-numeric primary field
+// untouched instead — a no-op, not a destroyer.
+func TestAddOnNamedNotesIsANoOp(t *testing.T) {
+	// FastCat(Pure("c3"), ...) is exactly the pattern mini.Mini("c3 e3 g3")
+	// produces; internal/core cannot import internal/mini (mini imports
+	// core), so the raw strings are built directly here.
+	p := Note(FastCat(Pure("c3"), Pure("e3"), Pure("g3"))).Add(12)
+	haps := p.QueryArc(FractionFromInt(0), FractionFromInt(1))
+	if len(haps) != 3 {
+		t.Fatalf("got %d haps, want 3", len(haps))
+	}
+	want := []string{"c3", "e3", "g3"}
+	for i, w := range want {
+		m := bagOf(t, haps[i].Value)
+		if got := m["note"]; got != w {
+			t.Errorf("hap %d note = %v, want %q — named notes must survive Add unchanged, not collapse to a number", i, got, w)
+		}
+	}
+}

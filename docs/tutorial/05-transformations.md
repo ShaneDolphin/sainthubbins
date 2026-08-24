@@ -164,9 +164,16 @@ core.Note(core.Pure(60)).Add(12)        // map[note:72] — C4 up an octave
 This works because the values above are numbers (or numeric mini-notation
 strings like `"0"`). Note *names* such as `"c3"` are kept as strings in the
 control bag until the sound engine parses them, so `Add` cannot do arithmetic
-on them — `core.Note(mini.Mini("c3")).Add(12)` does not transpose the note.
-Use note names when you want to write pitches directly, and numbers when you
-want to transpose them.
+on them — it leaves a named note exactly as it was rather than guessing:
+
+```go
+core.Note(mini.Mini("c3 e3 g3")).Add(12)   // unchanged: "c3", "e3", "g3"
+```
+
+Add does not raise an error here, and it does not merge the three notes into
+one — each stays its own untouched string. It just does nothing to them. Use
+note names when you want to write pitches directly, and numbers when you want
+to transpose them.
 
 ## Choosing one
 

@@ -23,14 +23,12 @@ func addValues(a, b any) any {
 
 	case aIsBag && !bIsBag:
 		out := cloneBag(am)
-		key := primaryNumeric(am)
-		out[key] = toFloat(am[key]) + toFloat(b)
+		addIntoField(out, primaryNumeric(am), toFloat(b))
 		return out
 
 	case !aIsBag && bIsBag:
 		out := cloneBag(bm)
-		key := primaryNumeric(bm)
-		out[key] = toFloat(a) + toFloat(bm[key])
+		addIntoField(out, primaryNumeric(bm), toFloat(a))
 		return out
 
 	default:
@@ -56,6 +54,26 @@ func addValues(a, b any) any {
 		}
 		return out
 	}
+}
+
+// addIntoField adds delta into bag[key] in place. If the field is absent,
+// it is created with value delta (the bag had no pitch yet — Add gives it
+// one). If the field is present but not genuinely numeric — a named note
+// such as "c3", kept as a string until the sound engine parses it — the
+// field is left untouched rather than summed: toFloat on a non-numeric
+// string is 0, and computing 0+delta would silently collapse every distinct
+// named note in a pattern to the same wrong value. A no-op is the safer
+// failure; see docs/tutorial/05-transformations.md.
+func addIntoField(bag map[string]any, key string, delta float64) {
+	cur, present := bag[key]
+	if !present {
+		bag[key] = delta
+		return
+	}
+	if nf, ok := numericValue(cur); ok {
+		bag[key] = nf + delta
+	}
+	// else: non-numeric current value — leave it exactly as cloned.
 }
 
 // numericValue reports whether v is a value toFloat treats as genuinely
