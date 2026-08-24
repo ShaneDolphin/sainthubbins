@@ -129,8 +129,7 @@ func parseSequence(input string) core.Pattern {
 		if tok == ".." || tok == "|" || tok == "," {
 			continue
 		}
-		base, reps := splitReplicate(tok)
-		base, w := splitWeight(base)
+		base, reps, w := splitStepBase(tok)
 		if w != 1 {
 			weightedAny = true
 		}
@@ -191,6 +190,26 @@ func splitReplicate(tok string) (string, int) {
 		return tok[:i], 1
 	}
 	return tok[:i], n
+}
+
+// splitStepBase resolves the two suffixes a mini-notation step token can
+// carry — replicate (!n) and weight (@n) — the same way parseSequence
+// resolves them for its own tokens. Any call site that treats a token as one
+// slot in a sequence-like list (a step in "a b c", an alternative in
+// "<a b>") must run it through here before parseToken, or the raw suffix
+// falls straight through parseToken's fallback and leaks into the value —
+// parseToken itself no longer understands either suffix, since both need
+// context (sibling durations for @, sibling slots for !) that only the
+// caller building the list has.
+//
+// splitReplicate runs first so the replicate count is read from the token as
+// written; splitWeight then strips @n from what's left. Callers with nothing
+// for a weight to be relative to (an alternation slot in "<...>" is always
+// exactly one full cycle) can simply ignore the returned weight.
+func splitStepBase(tok string) (base string, reps int, weight float64) {
+	base, reps = splitReplicate(tok)
+	base, weight = splitWeight(base)
+	return base, reps, weight
 }
 
 func splitMiniTokens(s string) []string {
@@ -354,9 +373,23 @@ func parseToken(tok string) core.Pattern {
 				if len(toks) == 0 {
 					continue
 				}
-				sub := make([]core.Pattern, len(toks))
-				for i, t := range toks {
-					sub[i] = parseToken(t)
+				// Each token here is one alternative occupying exactly one
+				// cycle, the same as a step in a sequence — so it needs the
+				// same splitStepBase treatment a sequence step gets, not a
+				// bare parseToken call. "!" expands into repeated
+				// alternatives ("<bd!3 sd>" is bd, bd, bd, sd across four
+				// cycles); "@" has nothing to be relative to inside a
+				// one-cycle slot, so its weight is simply discarded — but
+				// both suffixes still have to be stripped from the value,
+				// or parseToken's fallback leaks the raw "!3"/"@3" text into
+				// the hap.
+				var sub []core.Pattern
+				for _, t := range toks {
+					base, reps, _ := splitStepBase(t)
+					pat := parseToken(base)
+					for i := 0; i < reps; i++ {
+						sub = append(sub, pat)
+					}
 				}
 				pats = append(pats, core.SlowCat(sub...))
 			}

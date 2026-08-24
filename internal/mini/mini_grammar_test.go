@@ -120,3 +120,61 @@ func TestMiniReplicateMatchesWritingItOut(t *testing.T) {
 		}
 	}
 }
+
+// cycleValue returns the single value sounding in cycle n of p, or nil if
+// none. Angle-bracket alternation is one value per whole cycle, so this is
+// enough to check what each cycle's slot resolved to.
+func cycleValue(p core.Pattern, n int64) any {
+	haps := p.QueryArc(core.FractionFromInt(n), core.FractionFromInt(n+1))
+	if len(haps) == 0 {
+		return nil
+	}
+	return haps[0].Value
+}
+
+// TestMiniAngleBracketReplicateExpandsAlternatives guards the direct
+// parseToken('<...>' branch) call site, which does not go through
+// parseSequence and so never saw splitReplicate/splitWeight until this
+// fix. Before the fix, "bd!3" reached parseToken still carrying "!3", and
+// since parseToken no longer understands "!" the raw suffix leaked into
+// the value instead of expanding into three alternative cycles.
+func TestMiniAngleBracketReplicateExpandsAlternatives(t *testing.T) {
+	p := Mini("<bd!3 sd>")
+	want := []string{"bd", "bd", "bd", "sd"}
+	for i, w := range want {
+		got := cycleValue(p, int64(i))
+		if got != w {
+			t.Errorf("cycle %d = %v, want %q", i, got, w)
+		}
+	}
+}
+
+// TestMiniAngleBracketWeightIsStrippedNotApplied guards the same call site
+// for "@": a lone alternation slot is always exactly one cycle, so the
+// weight has nothing to be relative to and must be discarded — but the
+// value still needs to come out clean, not carrying "@3".
+func TestMiniAngleBracketWeightIsStrippedNotApplied(t *testing.T) {
+	p := Mini("<bd@3 sd>")
+	want := []string{"bd", "sd"}
+	for i, w := range want {
+		got := cycleValue(p, int64(i))
+		if got != w {
+			t.Errorf("cycle %d = %v, want %q", i, got, w)
+		}
+	}
+}
+
+// TestMiniAngleBracketPlainAlternationUnchanged is the regression guard:
+// every existing "<...>" pattern goes through the same branch this fix
+// touched, so a plain alternation with no suffixes must still alternate
+// exactly as before.
+func TestMiniAngleBracketPlainAlternationUnchanged(t *testing.T) {
+	p := Mini("<bd sd>")
+	want := []string{"bd", "sd", "bd", "sd"}
+	for i, w := range want {
+		got := cycleValue(p, int64(i))
+		if got != w {
+			t.Errorf("cycle %d = %v, want %q", i, got, w)
+		}
+	}
+}
