@@ -26,12 +26,16 @@ button{background:#444;color:#eee;border:none;padding:8px 16px;cursor:pointer;ma
 button:hover{background:#555}
 footer{margin-top:24px;font-size:12px;color:#888}
 footer em{color:#b5a46a}
+.hint{color:#999;font-size:13px;line-height:1.6}
+.hint code{color:#b5a46a}
 </style>
 </head>
 <body>
 <h1>Saint Hubbins — Live Console</h1>
-<p>Go pattern engine running natively. Type pattern code like <code>s("bd sd")</code> or mini <code>"bd ~ sd"</code> — these go to eleven.</p>
-<textarea id="editor">s("bd sd")</textarea>
+<p>Go pattern engine running natively. Type <strong>mini-notation</strong> and press Evaluate to see the events (haps) it produces — these go to eleven.</p>
+<p class="hint">Try: <code>bd sd</code> &middot; <code>bd*4</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
+Layering, controls and transforms (gain, cutoff, every, jux&hellip;) are the Go API — see <code>docs/tutorial/</code>.</p>
+<textarea id="editor">[bd*4, hh*8]</textarea>
 <br>
 <button onclick="evaluate()">Evaluate</button>
 <button onclick="hush()">Hush</button>

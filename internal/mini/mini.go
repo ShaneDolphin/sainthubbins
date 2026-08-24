@@ -30,6 +30,40 @@ func Mini(input string) core.Pattern {
 }
 
 func parseSequence(input string) core.Pattern {
+	// Stacking binds loosest: "bd*4, hh*8" is two layers, not a sequence.
+	// Split on depth-0 commas before anything else so operators inside a
+	// nested group are never treated as separators.
+	if parts := splitAtDepth0(input, ','); len(parts) > 1 {
+		pats := make([]core.Pattern, 0, len(parts))
+		for _, part := range parts {
+			if part = strings.TrimSpace(part); part != "" {
+				pats = append(pats, Mini(part))
+			}
+		}
+		if len(pats) == 1 {
+			return pats[0]
+		}
+		if len(pats) > 1 {
+			return core.Stack(pats...)
+		}
+	}
+	// Random choice binds tighter than stacking: "a | b" picks one per cycle.
+	if parts := splitAtDepth0(input, '|'); len(parts) > 1 {
+		choices := make([]any, 0, len(parts))
+		for _, part := range parts {
+			if part = strings.TrimSpace(part); part != "" {
+				choices = append(choices, Mini(part))
+			}
+		}
+		if len(choices) == 1 {
+			if p, ok := choices[0].(core.Pattern); ok {
+				return p
+			}
+		}
+		if len(choices) > 1 {
+			return core.Pure(0).Choose(choices)
+		}
+	}
 	// Very simplified: split by spaces respecting brackets/angles
 	// For now, handle: "bd sd", "bd ~", "bd*2", "bd:1", etc.
 	// Tokenize on spaces not inside []<>()
@@ -188,10 +222,107 @@ func splitMiniTokens(s string) []string {
 	return tokens
 }
 
+// --- Bracket-depth-aware scanning helpers -----------------------------------
+// Mini-notation operators (* / ( @ ! ? | ,) must never be matched inside a
+// nested group. Scanning with strings.Index/Contains splits tokens mid-bracket
+// and yields garbage atoms like "[bd". These helpers only match at depth 0.
+
+// bracketDelta reports the nesting change contributed by r.
+func bracketDelta(r byte) int {
+	switch r {
+	case '[', '<', '(', '{':
+		return 1
+	case ']', '>', ')', '}':
+		return -1
+	}
+	return 0
+}
+
+// indexAtDepth0 returns the index of the first byte of s that appears in chars
+// at bracket depth 0, or -1 when there is none.
+func indexAtDepth0(s, chars string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if depth == 0 && strings.IndexByte(chars, c) >= 0 {
+			return i
+		}
+		depth += bracketDelta(c)
+		if depth < 0 {
+			depth = 0
+		}
+	}
+	return -1
+}
+
+// containsAtDepth0 reports whether any byte in chars occurs at bracket depth 0.
+func containsAtDepth0(s, chars string) bool { return indexAtDepth0(s, chars) >= 0 }
+
+// splitAtDepth0 splits s on sep, ignoring separators inside brackets.
+func splitAtDepth0(s string, sep byte) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if depth == 0 && c == sep {
+			parts = append(parts, s[start:i])
+			start = i + 1
+			continue
+		}
+		depth += bracketDelta(c)
+		if depth < 0 {
+			depth = 0
+		}
+	}
+	return append(parts, s[start:])
+}
+
+// unwrapGroup returns the inner text of a token that is wholly enclosed by a
+// single bracket pair — "[a b]" -> "a b" — so the group is parsed as a unit
+// before any operator scanning happens.
+func unwrapGroup(tok string) (inner string, open byte, ok bool) {
+	if len(tok) < 2 {
+		return "", 0, false
+	}
+	open = tok[0]
+	if bracketDelta(open) != 1 {
+		return "", 0, false
+	}
+	depth := 0
+	for i := 0; i < len(tok); i++ {
+		depth += bracketDelta(tok[i])
+		if depth == 0 {
+			// Closed early: the group does not span the whole token
+			// (e.g. "[a b]*2"), so leave it to the operator handlers.
+			if i != len(tok)-1 {
+				return "", 0, false
+			}
+			return tok[1 : len(tok)-1], open, true
+		}
+	}
+	return "", 0, false
+}
+
 func parseToken(tok string) core.Pattern {
 	// Handle rest
 	if tok == "~" || tok == "-" || tok == "_" {
 		return core.Silence()
+	}
+	// A token that is entirely one bracket group is parsed as a unit first.
+	// Operators inside it belong to the group, not to this token.
+	if inner, open, ok := unwrapGroup(tok); ok {
+		switch open {
+		case '[':
+			return parseSequence(inner)
+		case '<':
+			toks := splitMiniTokens(inner)
+			pats := make([]core.Pattern, len(toks))
+			for i, t := range toks {
+				pats[i] = parseToken(t)
+			}
+			return core.SlowCat(pats...)
+		}
+		// '{' (polymeter) and '(' fall through to their existing handlers.
 	}
 	// Handle range operator inside token like "0..4" without spaces
 	if strings.Contains(tok, "..") && !strings.HasPrefix(tok, "..") && !strings.HasSuffix(tok, "..") {
@@ -220,10 +351,10 @@ func parseToken(tok string) core.Pattern {
 		}
 	}
 	// Handle choice operator "|" — random choice (Choose)
-	if strings.Contains(tok, "|") {
+	if containsAtDepth0(tok, "|") {
 		// Avoid infinite recursion if tok is exactly "|" (should be handled as tokenization, but just in case)
 		if tok != "|" {
-			parts := strings.Split(tok, "|")
+			parts := splitAtDepth0(tok, '|')
 			choices := make([]any, 0, len(parts))
 			for _, part := range parts {
 				part = strings.TrimSpace(part)
@@ -294,10 +425,10 @@ func parseToken(tok string) core.Pattern {
 	// Handle weight @: "bd@2" or "bd:3@2" etc — handle suffix @N and _N and ! and ?
 	// Strip trailing modifiers: @/_ weight, ! replicate, ? degrade
 	// For full PEG parity, these would be ElementStub ops; here we simplify to repeats/weights
-	if strings.Contains(tok, "@") || strings.Contains(tok, "_") || strings.Contains(tok, "!") || strings.Contains(tok, "?") {
+	if containsAtDepth0(tok, "@_!?") {
 		// Handle degrade ? and ?0.5
-		if strings.Contains(tok, "?") {
-			parts := strings.Split(tok, "?")
+		if containsAtDepth0(tok, "?") {
+			parts := splitAtDepth0(tok, '?')
 			base := parts[0]
 			pat := parseToken(base)
 			// degradeBy 0.5 default
@@ -310,8 +441,8 @@ func parseToken(tok string) core.Pattern {
 			return pat.DegradeBy(prob)
 		}
 		// Handle replicate !: "bd!2" or "bd!!" etc
-		if strings.Contains(tok, "!") {
-			baseEnd := strings.Index(tok, "!")
+		if containsAtDepth0(tok, "!") {
+			baseEnd := indexAtDepth0(tok, "!")
 			base := tok[:baseEnd]
 			rest := tok[baseEnd:]
 			reps := strings.Count(rest, "!") + 0
@@ -331,12 +462,12 @@ func parseToken(tok string) core.Pattern {
 			return pat.Ply(reps)
 		}
 		// Handle weight @ or _: "bd@2" means weight 2 (elongate) via TimeCatWeighted
-		if strings.Contains(tok, "@") || strings.Contains(tok, "_") {
-			sep := "@"
-			if strings.Contains(tok, "_") {
-				sep = "_"
+		if containsAtDepth0(tok, "@_") {
+			sep := byte('@')
+			if containsAtDepth0(tok, "_") {
+				sep = '_'
 			}
-			parts := strings.Split(tok, sep)
+			parts := splitAtDepth0(tok, sep)
 			base := parts[0]
 			weightStr := parts[1]
 			pat := parseToken(base)
@@ -348,8 +479,8 @@ func parseToken(tok string) core.Pattern {
 		}
 	}
 	// Handle euclid: "bd(3,8)" or "bd(3,8,2)"
-	if strings.Contains(tok, "(") && strings.HasSuffix(tok, ")") {
-		idx := strings.Index(tok, "(")
+	if indexAtDepth0(tok, "(") > 0 && strings.HasSuffix(tok, ")") {
+		idx := indexAtDepth0(tok, "(")
 		base := tok[:idx]
 		inside := tok[idx+1 : len(tok)-1]
 		parts := strings.Split(inside, ",")
@@ -368,9 +499,9 @@ func parseToken(tok string) core.Pattern {
 		}
 	}
 	// Handle fast/slow: "bd*2" "bd/2" "bd*2/3" etc.
-	if strings.Contains(tok, "*") || strings.Contains(tok, "/") {
+	if containsAtDepth0(tok, "*/") {
 		// Split base and modifiers
-		baseEnd := strings.IndexAny(tok, "*/")
+		baseEnd := indexAtDepth0(tok, "*/")
 		if baseEnd > 0 {
 			base := tok[:baseEnd]
 			mods := tok[baseEnd:]
@@ -419,8 +550,8 @@ func parseToken(tok string) core.Pattern {
 		return core.FastCat(pats...)
 	}
 	// Handle stack with comma: "bd,sd" ? Not standard mini, but handle
-	if strings.Contains(tok, ",") && !strings.Contains(tok, ":") {
-		parts := strings.Split(tok, ",")
+	if containsAtDepth0(tok, ",") && !strings.Contains(tok, ":") {
+		parts := splitAtDepth0(tok, ',')
 		pats := make([]core.Pattern, len(parts))
 		for i, p := range parts {
 			pats[i] = parseToken(strings.TrimSpace(p))
