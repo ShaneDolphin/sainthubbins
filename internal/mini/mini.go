@@ -89,13 +89,30 @@ func parseSequence(input string) core.Pattern {
 						}
 					}
 					rangePat := core.FastCat(pats...)
+					// Tokens surrounding the range are ordinary sequence
+					// steps too — they need the same splitStepBase pass as
+					// every other step, or a "!"/"@" suffix falls straight
+					// through parseToken's fallback and leaks into the
+					// value instead of expanding (!) or being stripped (@).
+					// This branch doesn't support weighted timing against a
+					// range (there's no TimeCatWeighted call here), so the
+					// weight is discarded same as it always was for this
+					// path — only the leaked suffix text is new breakage.
 					newPats := make([]core.Pattern, 0, len(tokens)-2)
 					for j := 0; j < i-1; j++ {
-						newPats = append(newPats, parseToken(tokens[j]))
+						base, reps, _ := splitStepBase(tokens[j])
+						pat := parseToken(base)
+						for k := 0; k < reps; k++ {
+							newPats = append(newPats, pat)
+						}
 					}
 					newPats = append(newPats, rangePat)
 					for j := i + 2; j < len(tokens); j++ {
-						newPats = append(newPats, parseToken(tokens[j]))
+						base, reps, _ := splitStepBase(tokens[j])
+						pat := parseToken(base)
+						for k := 0; k < reps; k++ {
+							newPats = append(newPats, pat)
+						}
 					}
 					if len(newPats) == 0 {
 						return core.Silence()

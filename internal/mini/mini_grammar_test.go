@@ -178,3 +178,41 @@ func TestMiniAngleBracketPlainAlternationUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// wantValues asserts haps' values, in order, against want.
+func wantValues(t *testing.T, haps []core.Hap, want []any) {
+	t.Helper()
+	if len(haps) != len(want) {
+		t.Fatalf("got %d haps, want %d: %v", len(haps), len(want), haps)
+	}
+	for i, w := range want {
+		if haps[i].Value != w {
+			t.Errorf("hap %d value = %v, want %v", i, haps[i].Value, w)
+		}
+	}
+}
+
+// TestMiniRangeReplicateBeforeExpands guards the ".." range operator's
+// surrounding-token handling in parseSequence: a token before the range is
+// a sequence step like any other, so "!" must still expand into siblings
+// rather than leaking "bd!2" as a literal value.
+func TestMiniRangeReplicateBeforeExpands(t *testing.T) {
+	haps := Mini("bd!2 0 .. 3").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	wantValues(t, haps, []any{"bd", "bd", 0, 1, 2, 3})
+}
+
+// TestMiniRangeWeightAfterIsStripped covers the other ordering — a token
+// after the range — and the other suffix: "@" must be stripped from the
+// value even though (as before this fix) this branch has never applied its
+// weight to the timing.
+func TestMiniRangeWeightAfterIsStripped(t *testing.T) {
+	haps := Mini("0 .. 3 sd@2").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	wantValues(t, haps, []any{0, 1, 2, 3, "sd"})
+}
+
+// TestMiniRangePlainUnchanged is the regression guard for the range branch:
+// a range with no surrounding suffixes must behave exactly as before.
+func TestMiniRangePlainUnchanged(t *testing.T) {
+	haps := Mini("0 .. 3").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	wantValues(t, haps, []any{0, 1, 2, 3})
+}
