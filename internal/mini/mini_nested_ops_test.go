@@ -32,7 +32,7 @@ func noGarbage(t *testing.T, code string, p core.Pattern) {
 		if !ok {
 			continue
 		}
-		for _, bad := range []string{"[", "]", "<", ">", "{", "}", "|", ","} {
+		for _, bad := range []string{"[", "]", "<", ">", "{", "}", "|", ",", "@", "!", "%", ".."} {
 			if contains(v, bad) {
 				t.Fatalf("%q produced garbage atom %q (contains %q)", code, v, bad)
 			}
@@ -159,6 +159,7 @@ func TestMiniDocumentedSyntax(t *testing.T) {
 		{"[bd*4, hh*8]", 12},
 		{"c3 e3 g3", 3},
 		{"bd:1 sd:2", 2},
+		{"{0 .. 3}", 4},
 	}
 	for _, tc := range cases {
 		p := Mini(tc.code)
@@ -166,6 +167,84 @@ func TestMiniDocumentedSyntax(t *testing.T) {
 		if got := len(values(p)); got != tc.want {
 			t.Errorf("%q expected %d haps, got %d: %v", tc.code, tc.want, got, values(p))
 		}
+	}
+}
+
+// TestMiniSplitStepBaseReattachesRemainderAfterDigits is the white-box half
+// of Fix 2: splitWeight/splitReplicate must consume only the leading numeric
+// run after "@"/"!" and reattach whatever comes after it (a "?" degrade,
+// the other operator) to the base, rather than handing the whole remainder
+// to ParseFloat/Atoi and discarding it wholesale when that fails.
+func TestMiniSplitStepBaseReattachesRemainderAfterDigits(t *testing.T) {
+	cases := []struct {
+		tok        string
+		wantBase   string
+		wantReps   int
+		wantWeight float64
+	}{
+		{"bd@3?", "bd?", 1, 3},
+		{"hh*8@2?", "hh*8?", 1, 2},
+		{"bd!2?", "bd?", 2, 1},
+		{"bd!2@3", "bd", 2, 3}, // deferred case: "!" consumed first, then "@3" strips into weight 3
+	}
+	for _, tc := range cases {
+		base, reps, weight := splitStepBase(tc.tok)
+		if base != tc.wantBase || reps != tc.wantReps || weight != tc.wantWeight {
+			t.Errorf("splitStepBase(%q) = (%q, %d, %v), want (%q, %d, %v)",
+				tc.tok, base, reps, weight, tc.wantBase, tc.wantReps, tc.wantWeight)
+		}
+	}
+}
+
+// TestMiniDegradeSurvivesWeight guards Fix 2's observable behavior for "?"
+// after "@": a single cycle can't tell "always degrades" from "never
+// degrades" from "degrades half the time" apart, so this asserts over many
+// cycles that the hap count actually thins out relative to the
+// never-degraded baseline.
+//
+// The "!" replicate sibling of this case ("bd!2?") is intentionally not
+// asserted here — see the doc comment on TestMiniReplicateDegradeMaskedByFastCatCycleBug.
+func TestMiniDegradeSurvivesWeight(t *testing.T) {
+	const cycles = 32
+	count := func(code string) int {
+		return len(Mini(code).QueryArc(core.FractionFromInt(0), core.FractionFromInt(cycles)))
+	}
+	base := count("bd@3")
+	if base != cycles {
+		t.Fatalf("bd@3 over %d cycles: got %d haps, want %d (sanity baseline)", cycles, base, cycles)
+	}
+	degraded := count("bd@3?")
+	if degraded == base {
+		t.Errorf("%q over %d cycles: got %d haps, same as the never-degraded baseline %d — \"?\" is being swallowed by the \"@\" weight",
+			"bd@3?", cycles, degraded, base)
+	}
+}
+
+// TestMiniReplicateDegradeMaskedByFastCatCycleBug documents a finding from
+// verifying Fix 2, not a Fix 2 bug: splitStepBase is provably correct for
+// "bd!2?" (see TestMiniSplitStepBaseReattachesRemainderAfterDigits — it
+// resolves to base "bd?", reps 2, exactly as intended), but the end-to-end
+// hap count never thins out, because core.FastCat's sub-pattern queries
+// always carry local span 0/1->1/1 regardless of which outer cycle is being
+// queried (verified directly against core.FastCat + DegradeBy, with no
+// mini-notation involved). DegradeBy's per-hap coin flip is keyed on the
+// hap's begin time, so every replica inside any multi-step sequence gets the
+// exact same, cycle-invariant decision forever — "bd@3?" only degrades
+// because a lone step bypasses FastCat/TimeCat entirely and is queried at
+// the true absolute time.
+//
+// This is a pre-existing engine defect, reproducible with no mini-notation
+// or Fix 2 changes involved, and out of scope for this fix wave — flagged
+// here instead of silently narrowing the guard.
+func TestMiniReplicateDegradeMaskedByFastCatCycleBug(t *testing.T) {
+	const cycles = 32
+	base := len(Mini("bd!2").QueryArc(core.FractionFromInt(0), core.FractionFromInt(cycles)))
+	degraded := len(Mini("bd!2?").QueryArc(core.FractionFromInt(0), core.FractionFromInt(cycles)))
+	if degraded != base {
+		t.Fatalf(`"bd!2?" over %d cycles: got %d haps, want %d (the never-degraded baseline) — `+
+			"if this fails, the FastCat cycle-position defect this test documents has been fixed; "+
+			"replace this test with a real degrade assertion like TestMiniDegradeSurvivesWeight's",
+			cycles, degraded, base)
 	}
 }
 

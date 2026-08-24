@@ -163,8 +163,9 @@ core.Note(core.Pure(60)).Add(12)        // map[note:72] — C4 up an octave
 
 This works because the values above are numbers (or numeric mini-notation
 strings like `"0"`). Note *names* such as `"c3"` are kept as strings in the
-control bag until the sound engine parses them, so `Add` cannot do arithmetic
-on them — it leaves a named note exactly as it was rather than guessing:
+control bag until the sound engine parses them, and `Add` does not include a
+note-name parser, so it cannot do arithmetic on them *yet* — it leaves a
+named note exactly as it was rather than guessing:
 
 ```go
 core.Note(mini.Mini("c3 e3 g3")).Add(12)   // unchanged: "c3", "e3", "g3"

@@ -60,6 +60,27 @@ mask := core.FastCat(core.Pure(true), core.Pure(false), core.Pure(true), core.Pu
 core.Note(mini.Mini("c3")).Struct(mask)                   // 3 events
 ```
 
+## Only `Add` understands control bags
+
+`Add` on an already-wrapped pattern adds into the bag's numeric field
+(`note`/`n`/`freq`, in that priority order) and leaves every other control
+untouched — see [chapter 5](05-transformations.md#pitch):
+
+```go
+core.Note(mini.Mini("0 4 7")).Add(12)   // map[note:12], map[note:16], map[note:19]
+```
+
+`Sub`, `Mul`, `Div`, `Mod` and `Pow` do not — each still calls `toFloat` on
+the whole value, so any control bag collapses to a bare number and every
+other control (gain, pan, whatever else was set) is discarded:
+
+```go
+core.Note(60).Sub(12)   // -12, not map[note:48]
+```
+
+Do the arithmetic before wrapping in a control, or use `Add` with a negative,
+reciprocal, etc. where that's workable.
+
 ## Tempo is a ratio, not a setting
 
 The renderer runs at a fixed two seconds per cycle. There is no BPM parameter —
