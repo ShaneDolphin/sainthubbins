@@ -119,7 +119,7 @@ Open `http://localhost:8080` after `serve` — the page contains an editor with 
 
 ## CLI Reference
 
-The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Four subcommands:
+The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Five subcommands:
 
 | Command | Usage | Effect |
 |---|---|---|
@@ -127,12 +127,20 @@ The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Four sub
 | `eval` | `saint-hubbins eval <code>` | Parses `<code>` as mini or control expression, queries 0..1 cycle, prints JSON |
 | `serve` | `saint-hubbins serve [addr]` | Starts the console server. Default `addr` is `:8080`. |
 | `render` | `saint-hubbins render <out.wav> <code>` | Renders `<code>` for 4 cycles at 48 kHz and writes a 16-bit mono WAV |
+| `play` | `saint-hubbins play <code> [host] [port] [secs]` | Streams `<code>` to SuperDirt over OSC. Defaults: `host` `127.0.0.1`, `port` `57120`, `secs` `8`. **Requires SuperCollider with SuperDirt already running and listening on port 57120** — if you hear nothing, that is almost always why. |
 
 `eval` and `render` accept **mini-notation** — the rhythm language documented in
 [the tutorial](docs/tutorial/02-mini-notation.md). Function-call syntax such as
 `s("bd sd")` or `.fast(2)` is *not* implemented as text: there is no script
 evaluator, so unrecognised input comes back as a literal string value. Layering,
 controls and transformations are the [Go API](docs/tutorial/03-patterns-in-go.md).
+
+`play "0 1 2 3"` sends four OSC messages naming **samples** `0`, `1`, `2`, `3`
+(`s "0"`, `s "1"`, ...), not notes: mini-notation stores a bare numeric token
+as a string, so it takes the same path as `bd`, not the numeric `n` path. If
+you want a sample index, use `bd:3` (see `bd:1` in the mini-notation table
+below); if you want actual note numbers over OSC, build the pattern with the
+Go API's `core.N` instead of typing bare numbers into mini-notation.
 
 Examples:
 

@@ -15,17 +15,18 @@ Now ask the binary what it can do:
 
 ```console
 $ go run ./cmd/saint-hubbins
-Usage: saint-hubbins <eval|serve|render|query> [args]
+Usage: saint-hubbins <eval|serve|render|play|query> [args]
   eval <code>        — evaluate pattern string
   query              — demo query: Stack(s("bd"), s("sd"))
   serve [addr]       — start live console server (default :8080)
   render <out.wav> <code> — offline render to WAV
+  play <code> [host] [port] [secs] — stream to SuperDirt over OSC
   (also available as 'hubbins' — these go to eleven)
 ```
 
 (It exits with status 1, since you gave it no command.)
 
-Four commands. You will use `eval` to look at patterns, `render` to hear them,
+Five commands. You will use `eval` to look at patterns, `render` to hear them,
 and `serve` for the browser console.
 
 ## Look at a pattern
@@ -104,6 +105,25 @@ record.
 
 The real output of Saint Hubbins is the pattern data. Audio is one thing you can
 do with it. See [Limitations](08-limitations.md).
+
+## Playing it live
+
+`render` bounces sine tones offline; `play` streams the real pattern data
+over OSC to [SuperDirt](https://github.com/musikinformatik/SuperDirt), which
+is what actually turns it into sound with real samples and synths:
+
+```console
+$ go run ./cmd/saint-hubbins play "bd sd" 127.0.0.1 57120 4
+```
+
+This only produces sound if **SuperCollider, with SuperDirt already
+started**, is listening on that host and port (57120 by default) — if you
+hear nothing, that is almost always why.
+
+One trap worth knowing before you type a pattern like `"0 1 2 3"`: a bare
+number in mini-notation is stored as a string, so `play` sends it as a
+**sample name** (`s "0"`), not a note number. For a sample index use `bd:3`
+syntax; for real note numbers, build the pattern in Go with `core.N` instead.
 
 ## Next
 
