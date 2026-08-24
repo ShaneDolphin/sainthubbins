@@ -47,11 +47,19 @@ func addValues(a, b any) any {
 			if k == primary {
 				if vf, ok := numericValue(v); ok {
 					addIntoField(out, k, vf)
+				} else if _, present := out[k]; !present {
+					// The right-hand side's primary field isn't genuinely
+					// numeric (e.g. a named note), and the left-hand bag has
+					// no value there at all — there's nothing to add to,
+					// so copy the field across rather than silently dropping
+					// it. This is what keeps S("bd").Add(Note("c3")) holding
+					// onto the note instead of losing it.
+					out[k] = v
 				}
-				// else: the right-hand side's primary field isn't genuinely
-				// numeric (e.g. a named note) — there's nothing sensible to
-				// add, so the left-hand value already cloned into out is
-				// left exactly as it was.
+				// else: the left-hand bag already has a (non-numeric) value
+				// for the primary field — the no-op-on-non-numeric
+				// protection applies, and the left-hand value already cloned
+				// into out is left exactly as it was.
 				continue
 			}
 			existing, ok := out[k]

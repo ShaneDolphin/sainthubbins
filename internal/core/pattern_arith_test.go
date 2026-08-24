@@ -2,7 +2,10 @@
 
 package core
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func bagOf(t *testing.T, v any) map[string]any {
 	t.Helper()
@@ -86,5 +89,67 @@ func TestAddOnNamedNotesIsANoOp(t *testing.T) {
 		if got := m["note"]; got != w {
 			t.Errorf("hap %d note = %v, want %q — named notes must survive Add unchanged, not collapse to a number", i, got, w)
 		}
+	}
+}
+
+// TestAddBagPlusBagPreservesAbsentPrimaryField guards against a third
+// corruption in the same bag+bag branch: the no-op-on-non-numeric guard
+// added for TestAddOnNamedNotesIsANoOp skipped the primary field on a
+// non-numeric right-hand value without checking whether the left-hand bag
+// even had that key. For a bag that lacks a pitch field entirely —
+// S("bd"), Gain(0.5) — primaryNumeric defaults to "note", so the guard's
+// "leave it as cloned" fell through to nothing being cloned at all, and
+// the note vanished instead of being copied across. Every case here
+// compares the whole resulting bag, not one key, because the bug is a
+// missing key that a single-key assertion would not catch.
+func TestAddBagPlusBagPreservesAbsentPrimaryField(t *testing.T) {
+	cases := []struct {
+		name string
+		p    Pattern
+		want map[string]any
+	}{
+		{
+			name: `S("bd").Add(Note("c3")) keeps both s and note`,
+			p:    S("bd").Add(Note("c3")),
+			want: map[string]any{"s": "bd", "note": "c3"},
+		},
+		{
+			name: `Gain(0.5).Add(Note("c3")) keeps both gain and note`,
+			p:    Gain(0.5).Add(Note("c3")),
+			want: map[string]any{"gain": 0.5, "note": "c3"},
+		},
+		{
+			name: `Note("c3").Add(Note(60)) leaves the name intact (no-op)`,
+			p:    Note("c3").Add(Note(60)),
+			want: map[string]any{"note": "c3"},
+		},
+		{
+			name: `Note(60).Add(Note("c3")) keeps the number`,
+			p:    Note(60).Add(Note("c3")),
+			want: map[string]any{"note": 60},
+		},
+		{
+			name: `Note(60).Add(Note(12)) sums to 72`,
+			p:    Note(60).Add(Note(12)),
+			want: map[string]any{"note": float64(72)},
+		},
+		{
+			name: `S("bd").Add(S("sd")) right-hand-wins for non-primary keys`,
+			p:    S("bd").Add(S("sd")),
+			want: map[string]any{"s": "sd"},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			haps := c.p.QueryArc(FractionFromInt(0), FractionFromInt(1))
+			if len(haps) != 1 {
+				t.Fatalf("got %d haps, want 1", len(haps))
+			}
+			m := bagOf(t, haps[0].Value)
+			if !reflect.DeepEqual(m, c.want) {
+				t.Errorf("bag = %#v, want %#v", m, c.want)
+			}
+		})
 	}
 }
