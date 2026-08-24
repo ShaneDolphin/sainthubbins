@@ -10,6 +10,45 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-24-remaining-work.md`
 
+## Carried finding from the real-time OSC plan
+
+Executing `2026-08-24-realtime-osc-output.md` surfaced a sixth defect that
+belongs here, because this plan owns mini-notation typing.
+
+**Bare numeric tokens are stored as strings.** `internal/mini/mini.go:558-561`
+validates a numeric token with `strconv.ParseFloat` and then stores the *raw
+token* via `core.Pure(tok)` — the parsed number is discarded:
+
+```go
+if _, err := strconv.ParseFloat(tok, 64); err == nil {
+    // numeric pure
+    return core.Pure(tok)   // tok is still the original string
+}
+```
+
+`internal/core/controls.go`'s `createParam`/`buildBag` then passes that value
+into control bags unchanged, with no string→number coercion. So a raw
+un-wrapped pattern such as `"0 1 2 3"` carries Go strings all the way to the
+output backends. The OSC path emits them as `s:"0"` — sound names — rather than
+`n:0`, and a user running `saint-hubbins play "0 1 2 3"` hears silence while
+SuperDirt logs "no synth or sample named 0".
+
+That behaviour is currently *documented and pinned* rather than fixed:
+`internal/osc/superdirt.go`'s doc comment states the contract, a test
+(`TestDirtArgsBareNumericStringIsASoundName`) locks it, and README plus
+`docs/tutorial/01-first-sounds.md` warn about it with the `bd:3` and `core.N`
+workarounds. Fixing the parser here means retiring all of that.
+
+**Before adding a task for this, decide whether it should be fixed at all.**
+Returning a parsed number changes what every downstream consumer receives —
+`eval`, `render`, the WASM bridge, the control-bag path and the audio renderer's
+type switches — none of which this plan's tests cover. A token like `"808"` is
+genuinely ambiguous: a sample bank name or a number. If you do fix it, treat it
+as its own task with its own regression sweep over `internal/core`,
+`internal/audio` and `examples/`, and retire the pinning test and the docs above
+in the same change. If you do not, move those docs from "current behaviour" to
+"deliberate design" so the next reader stops re-deriving the question.
+
 ## Global Constraints
 
 - Go 1.25.0, module `codeberg.org/uzu/saint-hubbins`. No new dependencies.
