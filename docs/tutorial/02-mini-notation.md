@@ -167,9 +167,16 @@ swap in distinct values and it becomes audible:
 cycle 0: a b
 cycle 1: c a   (wrapped back to the start mid-list)
 cycle 2: b c
+cycle 3: a b   (back to the start — the layers have realigned)
 ```
 
-Give it 6 cycles and the two layers realign, because `lcm(2, 3) = 6`.
+The layers realign after **3 cycles**, not 6. The rule: a layer of length `L`
+running at `R` steps per cycle returns to its starting element every
+`L / gcd(L, R)` cycles — here `3 / gcd(3, 2) = 3`. `lcm(2, 3) = 6` is a real
+number about this pattern, but it counts *steps*, not cycles: at 2 steps per
+cycle, 3 cycles is 6 steps, which is the step count at which both layers'
+internal step-clocks return to zero together. Don't confuse the two units —
+the layers are back where they started three cycles in, well before 6.
 
 Add `%n` to set the steps-per-cycle rate explicitly instead of taking it from
 the first layer:
