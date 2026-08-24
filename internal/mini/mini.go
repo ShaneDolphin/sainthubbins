@@ -206,34 +206,86 @@ func buildSteps(tokens []string) (pats []core.Pattern, weights []float64, hadRan
 // splitWeight separates a trailing @n weight from a token. "bd@3" yields
 // ("bd", 3). A token with no weight yields a weight of 1, so callers can treat
 // every step uniformly.
+//
+// Only the leading numeric run after "@" is consumed as the number — the
+// rest of the token (a "?" degrade, another operator) is reattached to the
+// base rather than being handed to ParseFloat, where it would fail and take
+// the whole weight down with it. "bd@3?" must yield ("bd?", 3), not ("bd", 1)
+// with the "?" silently discarded along with the weight.
 func splitWeight(tok string) (string, float64) {
 	i := indexAtDepth0(tok, "@")
 	if i <= 0 {
 		return tok, 1
 	}
-	w, err := strconv.ParseFloat(strings.TrimSpace(tok[i+1:]), 64)
+	numStr, remainder := splitLeadingFloat(tok[i+1:])
+	if numStr == "" {
+		return tok[:i], 1
+	}
+	w, err := strconv.ParseFloat(numStr, 64)
 	if err != nil || w <= 0 {
 		return tok[:i], 1
 	}
-	return tok[:i], w
+	return tok[:i] + remainder, w
 }
 
 // splitReplicate separates a trailing !n from a token. "bd!3" yields ("bd", 3);
 // a bare "bd!" yields ("bd", 2). A token with no ! yields a count of 1.
+//
+// Only the leading digit run after "!" is consumed as the count — the rest
+// of the token (a "?" degrade, an "@" weight) is reattached to the base, the
+// same way splitWeight reattaches its own remainder. "bd!2?" must yield
+// ("bd?", 2) and "bd!2@3" must yield ("bd@3", 2), not the count parse
+// failing and discarding the suffix along with it.
 func splitReplicate(tok string) (string, int) {
 	i := indexAtDepth0(tok, "!")
 	if i <= 0 {
 		return tok, 1
 	}
-	rest := strings.TrimSpace(tok[i+1:])
+	rest := tok[i+1:]
 	if rest == "" {
 		return tok[:i], 2
 	}
-	n, err := strconv.Atoi(rest)
+	digits, remainder := splitLeadingInt(rest)
+	if digits == "" {
+		return tok[:i], 1
+	}
+	n, err := strconv.Atoi(digits)
 	if err != nil || n < 1 {
 		return tok[:i], 1
 	}
-	return tok[:i], n
+	return tok[:i] + remainder, n
+}
+
+// splitLeadingInt consumes a leading run of ASCII digits from s. Used by
+// splitReplicate: a replicate count is always a whole number, so anything
+// after the digits belongs to the base, not the count.
+func splitLeadingInt(s string) (digits, rest string) {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return s[:i], s[i:]
+}
+
+// splitLeadingFloat consumes a leading run of ASCII digits with at most one
+// decimal point from s. Used by splitWeight: a weight can be fractional
+// ("@0.5"), but anything after that belongs to the base, not the weight.
+func splitLeadingFloat(s string) (numStr, rest string) {
+	i, dot := 0, false
+	for i < len(s) {
+		c := s[i]
+		if c >= '0' && c <= '9' {
+			i++
+			continue
+		}
+		if c == '.' && !dot {
+			dot = true
+			i++
+			continue
+		}
+		break
+	}
+	return s[:i], s[i:]
 }
 
 // splitStepBase resolves the two suffixes a mini-notation step token can
