@@ -229,12 +229,33 @@ func TestDocumentedIdioms(t *testing.T) {
 	})
 
 	t.Run("transpose before wrapping", func(t *testing.T) {
-		// Chapter 5 and 8.
+		// Chapter 5: Add on a bare number still works, unwrapped or wrapped
+		// after the fact — both land in the same place.
 		haps := core.Note(core.Pure(60).Add(12)).
 			QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
 		m, ok := haps[0].Value.(map[string]any)
 		if !ok || m["note"] != 72.0 {
 			t.Errorf("got %v, want map[note:72]", haps[0].Value)
+		}
+	})
+
+	t.Run("transpose an already-wrapped pattern", func(t *testing.T) {
+		// Chapter 5: Add now transposes a wrapped pattern directly instead
+		// of flattening it to a bare number.
+		haps := core.Note(mini.Mini("0 4 7")).Add(12).
+			QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+		if len(haps) != 3 {
+			t.Fatalf("got %d haps, want 3", len(haps))
+		}
+		want := []float64{12, 16, 19}
+		for i, w := range want {
+			m, ok := haps[i].Value.(map[string]any)
+			if !ok {
+				t.Fatalf("hap %d: value is %T, want a control bag", i, haps[i].Value)
+			}
+			if m["note"] != w {
+				t.Errorf("hap %d note = %v, want %v", i, m["note"], w)
+			}
 		}
 	})
 

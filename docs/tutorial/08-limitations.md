@@ -47,17 +47,6 @@ The engine is in `internal/`, which Go only allows the same module to import.
 A song is a new package beside `examples/`. You cannot `go get` Saint Hubbins
 into a separate project.
 
-## Mini-notation differences from Strudel
-
-| Syntax | Expected | Actual here |
-|--------|----------|-------------|
-| `bd@3 sd` | bd holds three quarters of the bar | **no effect** — identical to `bd sd` |
-| `bd!3 sd` | four equal steps | three bds inside the *first half* |
-| `{a b, c d e}%4` | four steps per cycle | **no effect** — the suffix is ignored |
-
-Workarounds: use `<>` to hold a note for a bar, and write repeats out in full
-(`"bd bd bd sd"`) instead of using `!`.
-
 ## `Struct` needs Go booleans
 
 ```go
@@ -71,39 +60,26 @@ mask := core.FastCat(core.Pure(true), core.Pure(false), core.Pure(true), core.Pu
 core.Note(mini.Mini("c3")).Struct(mask)                   // 3 events
 ```
 
-## `SlowCat` drops patterns that do not fill a cycle
+## Only `Add` understands control bags
 
-`SlowCat` plays one argument per cycle. It works when each argument is a single
-event spanning the whole bar, and silently produces **nothing** when an argument
-has several events inside the bar:
-
-```go
-fill := core.S(mini.Mini("~ ~ ~ [sd sd sd sd]"))       // 4 events per bar
-core.SlowCat(core.Silence(), core.Silence(), core.Silence(), fill)
-// 0 events, on every cycle
-```
-
-Use `Every` or `LastOf` for arrangement instead:
+`Add` on an already-wrapped pattern adds into the bag's numeric field
+(`note`/`n`/`freq`, in that priority order) and leaves every other control
+untouched — see [chapter 5](05-transformations.md#pitch):
 
 ```go
-core.Silence().LastOf(4, func(core.Pattern) core.Pattern { return fill })
-// 4 events on cycles 3, 7, 11 …
+core.Note(mini.Mini("0 4 7")).Add(12)   // map[note:12], map[note:16], map[note:19]
 ```
 
-## `Add` does not transpose a wrapped pattern
+`Sub`, `Mul`, `Div`, `Mod` and `Pow` do not — each still calls `toFloat` on
+the whole value, so any control bag collapses to a bare number and every
+other control (gain, pan, whatever else was set) is discarded:
 
 ```go
-core.Note(mini.Mini("0 4 7")).Add(12)   // every event becomes plain 12
+core.Note(60).Sub(12)   // -12, not map[note:48]
 ```
 
-`Add` on a pattern already wrapped in a control replaces the control bag with a
-bare number. Add first, wrap second:
-
-```go
-core.Note(core.Pure(60).Add(12))        // map[note:72]
-```
-
-Or just write the note names you want.
+Do the arithmetic before wrapping in a control, or use `Add` with a negative,
+reciprocal, etc. where that's workable.
 
 ## Tempo is a ratio, not a setting
 
@@ -124,8 +100,7 @@ HTTP instead. The WASM target builds and is unused.
 So the list above does not leave the wrong impression, these are dependable:
 
 - Exact rational timing. Events that should coincide always do; nothing drifts.
-- The mini-notation grammar in [chapter 2](02-mini-notation.md), minus the three
-  rows above.
+- The mini-notation grammar in [chapter 2](02-mini-notation.md).
 - Every transformation in [chapter 5](05-transformations.md), including
   `Every` and `LastOf` across multi-cycle renders.
 - Layering with `Stack`, and control merging with `Set`.

@@ -25,6 +25,17 @@ A bar is divided evenly between whatever you write.
 
 More items means each is shorter. The bar is always full.
 
+### Weight — `@`
+
+```
+"bd@3 sd"        bd for three quarters, sd for the last quarter
+```
+
+`@n` gives a step `n` times the share of the bar it would otherwise get,
+taken from its siblings — the other steps in the same sequence still split
+whatever is left evenly. `"bd@3 sd"` divides the bar 3:1, so `bd` holds from
+0 to 3/4 and `sd` holds from 3/4 to 1. A step with no `@` counts as weight 1.
+
 ### Rest — `~`
 
 ```
@@ -43,6 +54,17 @@ than beat 2 — and, in dubstep, it is most of the composition.
 
 `*` divides the item's own slot, so `"bd*4"` fills the bar but `"bd*2 sd"`
 squeezes two kicks into the first half only.
+
+### Replicate — `!`
+
+```
+"bd!3 sd"        four equal quarters: bd, bd, bd, sd
+```
+
+`!n` adds `n` copies of the item as siblings in the sequence, so `"bd!3 sd"`
+is exactly the same as writing out `"bd bd bd sd"` — unlike `*`, it does not
+stay confined to the item's own slot. A bare `!` with no number doubles the
+item.
 
 ### Slow — `/`
 
@@ -122,10 +144,46 @@ The fastest way to stop a hat pattern sounding mechanical.
 ### Polymeter — `{ }`
 
 ```
-"{bd sd, hh hh hh}"    a 2-step and a 3-step cycle running together
+"{bd sd, hh hh hh}"    two layers, both playing 2 steps per cycle
 ```
 
-The sequences have different lengths and drift against each other.
+A polymeter is not a stack of independent sequences. Every layer plays the
+*same number of steps per cycle* — the steps-per-cycle rate — and each layer
+walks through its own list of elements at that rate, wrapping around when it
+runs out. Without an explicit `%n`, the rate comes from the first layer's
+length.
+
+Here the first layer, `bd sd`, has 2 steps, so both layers play 2 steps per
+cycle: 2 + 2 = 4 events per cycle, not 2 + 3 = 5. The second layer's own list
+has 3 elements, which does not divide evenly into 2, so it does not just
+repeat its first 2 elements forever — it keeps advancing through its
+3-element list at 2 steps per cycle and drifts against the first layer. Every
+`hh` sounds the same, so that drift is silent in this particular example;
+swap in distinct values and it becomes audible:
+
+```
+"{bd sd, a b c}"
+
+cycle 0: a b
+cycle 1: c a   (wrapped back to the start mid-list)
+cycle 2: b c
+cycle 3: a b   (back to the start — the layers have realigned)
+```
+
+The layers realign after **3 cycles**, not 6. The rule: a layer of length `L`
+running at `R` steps per cycle returns to its starting element every
+`L / gcd(L, R)` cycles — here `3 / gcd(3, 2) = 3`. `lcm(2, 3) = 6` is a real
+number about this pattern, but it counts *steps*, not cycles: at 2 steps per
+cycle, 3 cycles is 6 steps, which is the step count at which both layers'
+internal step-clocks return to zero together. Don't confuse the two units —
+the layers are back where they started three cycles in, well before 6.
+
+Add `%n` to set the steps-per-cycle rate explicitly instead of taking it from
+the first layer:
+
+```
+"{bd sd, hh hh hh}%4"    4 steps per cycle in both layers (8 events/cycle)
+```
 
 ### Number range — `..`
 
@@ -133,27 +191,15 @@ The sequences have different lengths and drift against each other.
 "0 .. 3"         0 1 2 3 as four steps
 ```
 
-## Two differences from Strudel
-
-If you are coming from Strudel or Tidal, these two do not behave as you expect.
-
-**`@` (elongate) currently has no effect.** `"bd@3 sd"` produces exactly the
-same timing as `"bd sd"`. To hold a note for a whole bar use `<>`; to weight a
-step, write it out (`"bd bd bd sd"`).
-
-**`!` subdivides in place rather than adding steps.** `"bd!3 sd"` puts three
-kicks inside the *first half* of the bar (at 0, 1/6, 1/3), where Strudel would
-give four equal quarters. If you want four equal steps, write `"bd bd bd sd"`.
-
-Both are listed in [Limitations](08-limitations.md).
-
 ## Reference
 
 | Syntax | Meaning | Example |
 |--------|---------|---------|
 | ` ` | sequence | `bd sd` |
+| `@n` | weight (share of the bar) | `bd@3 sd` |
 | `~` | rest | `bd ~ sd ~` |
 | `*n` | repeat n times | `bd*4` |
+| `!n` | replicate as sibling steps | `bd!3 sd` |
 | `/n` | play every n cycles | `bd/2` |
 | `[ ]` | group | `bd [sd sd]` |
 | `,` | stack / chord | `[bd, hh]`, `[c3,e3,g3]` |
@@ -163,7 +209,8 @@ Both are listed in [Limitations](08-limitations.md).
 | `:n` | sample index | `bd:1` |
 | `\|` | random choice | `bd\|sd` |
 | `?` | random drop | `hh*16?` |
-| `{ }` | polymeter | `{bd sd, hh hh hh}` |
+| `{ }` | polymeter (steps/cycle from the first layer) | `{bd sd, hh hh hh}` |
+| `{ }%n` | polymeter with an explicit steps-per-cycle rate | `{bd sd, hh hh hh}%4` |
 | `..` | number range | `0 .. 3` |
 
 ## What mini-notation cannot do

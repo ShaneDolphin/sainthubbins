@@ -9,25 +9,15 @@ import "math"
 // toFloat helper already in signal.go, but define here if not exists
 // Note: toFloat defined in signal.go, reuse.
 
-// Add adds pattern/value to this pattern (numeric).
+// Add adds pattern/value to this pattern (numeric). When either side is a
+// control bag, the addition lands on the bag's numeric field instead of
+// flattening it — see addValues in pattern_arith.go.
 func (p Pattern) Add(other any) Pattern {
 	otherPat := Reify(other)
-	// Pattern of functions: each a -> func(b) => a+b
 	funcPat := p.Fmap(func(a any) any {
-		return func(b any) any {
-			// handle numerals via ParseNumeral or float
-			af := toFloat(a)
-			bf := toFloat(b)
-			return af + bf
-		}
+		return func(b any) any { return addValues(a, b) }
 	})
-	// Need to map otherPat to values, then AppBoth
-	valPat := otherPat.Fmap(func(b any) any { return b })
-	// funcPat AppBoth valPat -> pattern of results (each result is func(b) applied)
-	// But AppBoth expects funcPat's value is func(any)any and valPat's value is any, and it applies.
-	// Our funcPat's value is func(b) => a+b, which when applied to b gives float.
-	// So we can just AppBoth
-	return funcPat.AppBoth(valPat)
+	return funcPat.AppBoth(otherPat.Fmap(func(b any) any { return b }))
 }
 
 func (p Pattern) Sub(other any) Pattern {

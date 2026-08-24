@@ -71,57 +71,241 @@ func parseSequence(input string) core.Pattern {
 	if len(tokens) == 0 {
 		return core.Silence()
 	}
-	// Handle range operator "a .. b" at sequence level (spaced "..")
-	for i := 0; i < len(tokens); i++ {
-		if tokens[i] == ".." && i > 0 && i+1 < len(tokens) {
-			leftStr := tokens[i-1]
-			rightStr := tokens[i+1]
-			if l, err1 := strconv.Atoi(leftStr); err1 == nil {
-				if r, err2 := strconv.Atoi(rightStr); err2 == nil {
-					var pats []core.Pattern
-					if l <= r {
-						for v := l; v <= r; v++ {
-							pats = append(pats, core.Pure(v))
-						}
-					} else {
-						for v := l; v >= r; v-- {
-							pats = append(pats, core.Pure(v))
-						}
-					}
-					rangePat := core.FastCat(pats...)
-					newPats := make([]core.Pattern, 0, len(tokens)-2)
-					for j := 0; j < i-1; j++ {
-						newPats = append(newPats, parseToken(tokens[j]))
-					}
-					newPats = append(newPats, rangePat)
-					for j := i + 2; j < len(tokens); j++ {
-						newPats = append(newPats, parseToken(tokens[j]))
-					}
-					if len(newPats) == 0 {
-						return core.Silence()
-					}
-					if len(newPats) == 1 {
-						return newPats[0]
-					}
-					return core.FastCat(newPats...)
-				}
-			}
-		}
-	}
 	// Depth-0 "," and "|" are handled at the top of this function, before
 	// tokenizing, so any isolated separator reaching this point is a degenerate
-	// input such as "," on its own. parseToken handles those.
-	if len(tokens) == 1 {
-		return parseToken(tokens[0])
+	// input such as "," on its own; buildSteps skips it and falls through to
+	// Silence below.
+	//
+	// A single real token used to shortcut straight to parseToken(tokens[0]),
+	// bypassing weight stripping — "bd@3" would then reach parseToken still
+	// carrying its "@3" suffix, and since parseToken no longer understands
+	// "@" the raw suffix leaked into the value. Every token, including a lone
+	// one, must go through buildSteps (and so splitStepBase) first.
+	pats, weights, hadRange := buildSteps(tokens)
+	if len(pats) == 0 {
+		return core.Silence()
 	}
-	pats := make([]core.Pattern, 0, len(tokens))
-	for _, tok := range tokens {
-		if tok == ".." || tok == "|" || tok == "," {
+	if len(pats) == 1 {
+		// Exactly one step: there are no siblings for its weight to be
+		// relative to, so the weight is discarded — the value still went
+		// through splitWeight to strip a trailing "@n", but the timing
+		// already spans the full cycle without TimeCatWeighted's
+		// involvement.
+		return pats[0]
+	}
+	if hadRange {
+		// This branch doesn't support weighted timing against a range
+		// (there's no sibling duration for its weight to be relative to
+		// across a value/value transition), so weights are discarded same
+		// as they always were for this path — only a leaked suffix in the
+		// value itself would be new breakage, and buildSteps already
+		// stripped that.
+		return core.FastCat(pats...)
+	}
+	weightedAny := false
+	for _, w := range weights {
+		if w != 1 {
+			weightedAny = true
+			break
+		}
+	}
+	if !weightedAny {
+		return core.FastCat(pats...)
+	}
+	weighted := make([]any, 0, len(pats)*2)
+	for i, p := range pats {
+		weighted = append(weighted, weights[i], p)
+	}
+	return core.TimeCatWeighted(weighted...)
+}
+
+// buildSteps resolves a token list (as produced by splitMiniTokens) into the
+// sequence of steps it names. It is the one place that combines the three
+// things every list-building call site needs — parseSequence's main loop,
+// the "<...>" alternation branch and the "{...}" polymeter branch — so a fix
+// to any of them only has to happen once:
+//
+//   - ".." range expansion: "a .. b" between two integer tokens expands into
+//     one Pure(v) step per value in the range, inclusive, in the direction
+//     from a to b. Only the first such range in the list is expanded — this
+//     matches the pre-existing single-range behavior of this grammar.
+//   - "!" replicate: splitStepBase's reps count turns one token into that
+//     many sibling steps.
+//   - "@" weight: splitStepBase's weight is returned alongside each step so
+//     a caller that divides the cycle by relative duration (parseSequence)
+//     can use it; a caller for which a step is always exactly one slot
+//     ("<...>", "{...}") can simply ignore the weights slice.
+//
+// A range step always carries weight 1, and hadRange reports whether a
+// range was found — parseSequence uses that to fall back to plain
+// concatenation for the whole list, since this grammar has never supported
+// weighted timing against a range.
+func buildSteps(tokens []string) (pats []core.Pattern, weights []float64, hadRange bool) {
+	appendToken := func(tok string) {
+		base, reps, w := splitStepBase(tok)
+		pat := parseToken(base)
+		for k := 0; k < reps; k++ {
+			pats = append(pats, pat)
+			weights = append(weights, w)
+		}
+	}
+
+	rangeAt := -1
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i] != ".." || i == 0 || i+1 >= len(tokens) {
 			continue
 		}
-		pats = append(pats, parseToken(tok))
+		if _, err1 := strconv.Atoi(tokens[i-1]); err1 != nil {
+			continue
+		}
+		if _, err2 := strconv.Atoi(tokens[i+1]); err2 != nil {
+			continue
+		}
+		rangeAt = i
+		break
 	}
-	return core.FastCat(pats...)
+
+	if rangeAt < 0 {
+		for _, tok := range tokens {
+			if tok == ".." || tok == "|" || tok == "," {
+				continue
+			}
+			appendToken(tok)
+		}
+		return pats, weights, false
+	}
+
+	for j := 0; j < rangeAt-1; j++ {
+		if t := tokens[j]; t == ".." || t == "|" || t == "," {
+			continue
+		}
+		appendToken(tokens[j])
+	}
+	l, _ := strconv.Atoi(tokens[rangeAt-1])
+	r, _ := strconv.Atoi(tokens[rangeAt+1])
+	if l <= r {
+		for v := l; v <= r; v++ {
+			pats = append(pats, core.Pure(v))
+			weights = append(weights, 1)
+		}
+	} else {
+		for v := l; v >= r; v-- {
+			pats = append(pats, core.Pure(v))
+			weights = append(weights, 1)
+		}
+	}
+	for j := rangeAt + 2; j < len(tokens); j++ {
+		if t := tokens[j]; t == ".." || t == "|" || t == "," {
+			continue
+		}
+		appendToken(tokens[j])
+	}
+	return pats, weights, true
+}
+
+// splitWeight separates a trailing @n weight from a token. "bd@3" yields
+// ("bd", 3). A token with no weight yields a weight of 1, so callers can treat
+// every step uniformly.
+//
+// Only the leading numeric run after "@" is consumed as the number — the
+// rest of the token (a "?" degrade, another operator) is reattached to the
+// base rather than being handed to ParseFloat, where it would fail and take
+// the whole weight down with it. "bd@3?" must yield ("bd?", 3), not ("bd", 1)
+// with the "?" silently discarded along with the weight.
+func splitWeight(tok string) (string, float64) {
+	i := indexAtDepth0(tok, "@")
+	if i <= 0 {
+		return tok, 1
+	}
+	numStr, remainder := splitLeadingFloat(tok[i+1:])
+	if numStr == "" {
+		return tok[:i], 1
+	}
+	w, err := strconv.ParseFloat(numStr, 64)
+	if err != nil || w <= 0 {
+		return tok[:i], 1
+	}
+	return tok[:i] + remainder, w
+}
+
+// splitReplicate separates a trailing !n from a token. "bd!3" yields ("bd", 3);
+// a bare "bd!" yields ("bd", 2). A token with no ! yields a count of 1.
+//
+// Only the leading digit run after "!" is consumed as the count — the rest
+// of the token (a "?" degrade, an "@" weight) is reattached to the base, the
+// same way splitWeight reattaches its own remainder. "bd!2?" must yield
+// ("bd?", 2) and "bd!2@3" must yield ("bd@3", 2), not the count parse
+// failing and discarding the suffix along with it.
+func splitReplicate(tok string) (string, int) {
+	i := indexAtDepth0(tok, "!")
+	if i <= 0 {
+		return tok, 1
+	}
+	rest := tok[i+1:]
+	if rest == "" {
+		return tok[:i], 2
+	}
+	digits, remainder := splitLeadingInt(rest)
+	if digits == "" {
+		return tok[:i], 1
+	}
+	n, err := strconv.Atoi(digits)
+	if err != nil || n < 1 {
+		return tok[:i], 1
+	}
+	return tok[:i] + remainder, n
+}
+
+// splitLeadingInt consumes a leading run of ASCII digits from s. Used by
+// splitReplicate: a replicate count is always a whole number, so anything
+// after the digits belongs to the base, not the count.
+func splitLeadingInt(s string) (digits, rest string) {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return s[:i], s[i:]
+}
+
+// splitLeadingFloat consumes a leading run of ASCII digits with at most one
+// decimal point from s. Used by splitWeight: a weight can be fractional
+// ("@0.5"), but anything after that belongs to the base, not the weight.
+func splitLeadingFloat(s string) (numStr, rest string) {
+	i, dot := 0, false
+	for i < len(s) {
+		c := s[i]
+		if c >= '0' && c <= '9' {
+			i++
+			continue
+		}
+		if c == '.' && !dot {
+			dot = true
+			i++
+			continue
+		}
+		break
+	}
+	return s[:i], s[i:]
+}
+
+// splitStepBase resolves the two suffixes a mini-notation step token can
+// carry — replicate (!n) and weight (@n) — the same way parseSequence
+// resolves them for its own tokens. Any call site that treats a token as one
+// slot in a sequence-like list (a step in "a b c", an alternative in
+// "<a b>") must run it through here before parseToken, or the raw suffix
+// falls straight through parseToken's fallback and leaks into the value —
+// parseToken itself no longer understands either suffix, since both need
+// context (sibling durations for @, sibling slots for !) that only the
+// caller building the list has.
+//
+// splitReplicate runs first so the replicate count is read from the token as
+// written; splitWeight then strips @n from what's left. Callers with nothing
+// for a weight to be relative to (an alternation slot in "<...>" is always
+// exactly one full cycle) can simply ignore the returned weight.
+func splitStepBase(tok string) (base string, reps int, weight float64) {
+	base, reps = splitReplicate(tok)
+	base, weight = splitWeight(base)
+	return base, reps, weight
 }
 
 func splitMiniTokens(s string) []string {
@@ -285,10 +469,19 @@ func parseToken(tok string) core.Pattern {
 				if len(toks) == 0 {
 					continue
 				}
-				sub := make([]core.Pattern, len(toks))
-				for i, t := range toks {
-					sub[i] = parseToken(t)
-				}
+				// Each token here is one alternative occupying exactly one
+				// cycle, the same as a step in a sequence — so it needs the
+				// same buildSteps treatment a sequence step list gets, not a
+				// bare parseToken call. "!" expands into repeated
+				// alternatives ("<bd!3 sd>" is bd, bd, bd, sd across four
+				// cycles); ".." expands a range the same as it does at
+				// sequence level ("<0 .. 3>" is 0, 1, 2, 3 across four
+				// cycles); "@" has nothing to be relative to inside a
+				// one-cycle slot, so its weight is simply discarded — but
+				// both suffixes still have to be stripped from the value,
+				// or parseToken's fallback leaks the raw "!3"/"@3" text into
+				// the hap.
+				sub, _, _ := buildSteps(toks)
 				pats = append(pats, core.SlowCat(sub...))
 			}
 			switch len(pats) {
@@ -347,62 +540,86 @@ func parseToken(tok string) core.Pattern {
 	}
 	// Handle curly polymeter "{a b, c d e}" and "{a b, c d e}%3" / "{a b, c d e}*3"
 	if len(tok) >= 2 && tok[0] == '{' {
-		// Find closing }
 		closeIdx := strings.LastIndex(tok, "}")
 		if closeIdx > 0 {
 			inner := tok[1:closeIdx]
-			suffix := tok[closeIdx+1:]
-			// inner is comma-separated sequences
-			seqStrs := strings.Split(inner, ",")
-			seqPats := make([]core.Pattern, 0, len(seqStrs))
-			for _, s := range seqStrs {
-				s = strings.TrimSpace(s)
-				if s == "" {
+			suffix := strings.TrimSpace(tok[closeIdx+1:])
+
+			// Each comma-separated layer is a list of steps. Each token here
+			// is one slot in that list, the same as a step in a sequence, so
+			// it needs buildSteps's treatment: "!" expands into repeated
+			// sibling steps, ".." expands a range the same as it does at
+			// sequence level, and "@" is stripped from the value (there is
+			// no sibling duration for its weight to be relative to inside a
+			// rate-based list, so it is discarded like it is for "<...>").
+			// Calling parseToken directly, as on a bare token, would leak a
+			// raw "!2"/"@2"/".." suffix straight into the value instead.
+			var layers [][]core.Pattern
+			for _, part := range splitAtDepth0(inner, ',') {
+				toks := splitMiniTokens(strings.TrimSpace(part))
+				if len(toks) == 0 {
 					continue
 				}
-				seqPats = append(seqPats, Mini(s))
+				steps, _, _ := buildSteps(toks)
+				layers = append(layers, steps)
 			}
-			var base core.Pattern
-			if len(seqPats) == 0 {
-				base = core.Silence()
-			} else if len(seqPats) == 1 {
-				base = seqPats[0]
-			} else {
-				// Polymeter: stack with steps alignment via Polymeter
-				// Polymeter requires Steps; FastCat has nil Steps so falls back to Stack
-				allPats := seqPats
-				base = core.Polymeter(allPats...)
-				// Fallback to Stack if Polymeter returned Silence due to missing Steps
-				if len(base.FirstCycle()) == 0 {
-					base = core.Stack(seqPats...)
+			if len(layers) == 0 {
+				return core.Silence()
+			}
+
+			// Steps per cycle: %n if given, otherwise the first layer's length.
+			// This is what makes it a polymeter — every layer runs at the same
+			// rate, and a layer whose length does not divide that rate lands on
+			// different elements each cycle.
+			stepsPerCycle := len(layers[0])
+			if strings.HasPrefix(suffix, "%") {
+				// %n's digits end where the next operator (*n or /n) begins —
+				// "%4*2" is steps-per-cycle 4 with a *2 still to apply, not a
+				// malformed "%4*2" that silently discards the *2.
+				rest := suffix[1:]
+				digits := 0
+				for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
+					digits++
 				}
+				if digits > 0 {
+					if v, err := strconv.Atoi(rest[:digits]); err == nil && v > 0 {
+						stepsPerCycle = v
+					}
+				}
+				suffix = strings.TrimSpace(rest[digits:])
 			}
-			// Handle suffix: %n (steps-per-cycle), *n (fast), /n (slow)
-			suffix = strings.TrimSpace(suffix)
-			if suffix != "" {
-				if strings.HasPrefix(suffix, "%") {
-					if v, err := strconv.Atoi(strings.TrimSpace(suffix[1:])); err == nil && v > 0 {
-						// steps-per-cycle: repeat to lcm? For "%3", JS expects [a b a, c d e] style — approximate via FastCat repeated?
-						// Simplified: Fast by factor len(seqPats)?? Use Polymeter with explicit steps: not perfect, but ensure non-empty
-						return base
-					}
-				} else if strings.HasPrefix(suffix, "*") {
-					if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
-						return base.FastF(core.FractionFromFloat(v))
-					}
-				} else if strings.HasPrefix(suffix, "/") {
-					if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
-						return base.SlowF(core.FractionFromFloat(v))
-					}
+
+			pats := make([]core.Pattern, 0, len(layers))
+			for _, steps := range layers {
+				// SlowCat gives one element per cycle; speeding it up by the
+				// step count gives that many elements per cycle, wrapping
+				// around the layer's own length.
+				pats = append(pats, core.SlowCat(steps...).
+					FastF(core.NewFraction(int64(stepsPerCycle), 1)))
+			}
+			base := pats[0]
+			if len(pats) > 1 {
+				base = core.Stack(pats...)
+			}
+
+			// A leftover *n or /n still applies on top.
+			if strings.HasPrefix(suffix, "*") {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
+					return base.FastF(core.FractionFromFloat(v))
+				}
+			} else if strings.HasPrefix(suffix, "/") {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
+					return base.SlowF(core.FractionFromFloat(v))
 				}
 			}
 			return base
 		}
 	}
-	// Handle weight @: "bd@2" or "bd:3@2" etc — handle suffix @N and _N and ! and ?
-	// Strip trailing modifiers: @/_ weight, ! replicate, ? degrade
-	// For full PEG parity, these would be ElementStub ops; here we simplify to repeats/weights
-	if containsAtDepth0(tok, "@_!?") {
+	// Handle suffix modifiers _N and ?. @ weight and ! replicate are both
+	// handled by parseSequence instead: @ needs sibling steps' relative
+	// durations, and ! needs to add sibling steps of its own, so neither can
+	// be resolved from a single token in isolation.
+	if containsAtDepth0(tok, "_?") {
 		// Handle degrade ? and ?0.5
 		if containsAtDepth0(tok, "?") {
 			parts := splitAtDepth0(tok, '?')
@@ -417,34 +634,9 @@ func parseToken(tok string) core.Pattern {
 			}
 			return pat.DegradeBy(prob)
 		}
-		// Handle replicate !: "bd!2" or "bd!!" etc
-		if containsAtDepth0(tok, "!") {
-			baseEnd := indexAtDepth0(tok, "!")
-			base := tok[:baseEnd]
-			rest := tok[baseEnd:]
-			reps := strings.Count(rest, "!") + 0
-			// Also handle !N
-			pat := parseToken(base)
-			// Count ! and number after
-			numStr := strings.Trim(rest, "!")
-			if numStr != "" {
-				if v, err := strconv.Atoi(numStr); err == nil {
-					reps = v
-				}
-			}
-			if reps <= 1 {
-				reps = 2
-			}
-			// Fast replicate: repeat event reps times via Ply? For mini, ! is weight-like
-			return pat.Ply(reps)
-		}
-		// Handle weight @ or _: "bd@2" means weight 2 (elongate) via TimeCatWeighted
-		if containsAtDepth0(tok, "@_") {
-			sep := byte('@')
-			if containsAtDepth0(tok, "_") {
-				sep = '_'
-			}
-			parts := splitAtDepth0(tok, sep)
+		// Handle weight alias _: "bd_2" means weight 2 (elongate).
+		if containsAtDepth0(tok, "_") {
+			parts := splitAtDepth0(tok, '_')
 			base := parts[0]
 			weightStr := parts[1]
 			pat := parseToken(base)
