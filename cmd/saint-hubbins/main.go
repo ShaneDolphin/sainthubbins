@@ -4,23 +4,30 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strconv"
+	"time"
 
 	"codeberg.org/uzu/saint-hubbins/internal/audio"
 	"codeberg.org/uzu/saint-hubbins/internal/core"
 	"codeberg.org/uzu/saint-hubbins/internal/mini"
+	"codeberg.org/uzu/saint-hubbins/internal/osc"
+	"codeberg.org/uzu/saint-hubbins/internal/session"
 	"codeberg.org/uzu/saint-hubbins/web"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: saint-hubbins <eval|serve|render|query> [args]")
+		fmt.Println("Usage: saint-hubbins <eval|serve|render|play|query> [args]")
 		fmt.Println("  eval <code>        — evaluate pattern string")
 		fmt.Println("  query              — demo query: Stack(s(\"bd\"), s(\"sd\"))")
 		fmt.Println("  serve [addr]       — start live console server (default :8080)")
 		fmt.Println("  render <out.wav> <code> — offline render to WAV")
+		fmt.Println("  play <code> [host] [port] [secs] — stream to SuperDirt over OSC")
 		fmt.Println("  (also available as 'hubbins' — these go to eleven)")
 		os.Exit(1)
 	}
@@ -45,6 +52,29 @@ func main() {
 			os.Exit(1)
 		}
 		demoRender(os.Args[2], os.Args[3])
+	case "play":
+		if len(os.Args) < 3 {
+			fmt.Println("play <code> [host] [port] [seconds]")
+			os.Exit(1)
+		}
+		host, port, secs := "127.0.0.1", 57120, 8.0
+		if len(os.Args) >= 4 {
+			host = os.Args[3]
+		}
+		if len(os.Args) >= 5 {
+			if v, err := strconv.Atoi(os.Args[4]); err == nil {
+				port = v
+			}
+		}
+		if len(os.Args) >= 6 {
+			if v, err := strconv.ParseFloat(os.Args[5], 64); err == nil {
+				secs = v
+			}
+		}
+		if err := runPlay(os.Args[2], host, port, secs, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Printf("unknown command %q\n", os.Args[1])
 		os.Exit(1)
@@ -102,6 +132,32 @@ func demoRender(outPath, code string) {
 		os.Exit(1)
 	}
 	fmt.Printf("wrote %s (%d samples)\n", outPath, len(samples))
+}
+
+// runPlay evaluates code and streams it to SuperDirt over OSC for seconds.
+// It is separate from the CLI dispatch so it can be tested without os.Exit.
+func runPlay(code, host string, port int, seconds float64, out io.Writer) error {
+	client := osc.New(host, port)
+	defer client.Close()
+
+	s := session.NewSession()
+	s.SetSink(&session.OSCSink{Client: client})
+	if _, err := s.Evaluate(code); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(seconds*float64(time.Second)))
+	defer cancel()
+
+	fmt.Fprintf(out, "playing %q to %s:%d for %.1fs — these go to eleven\n",
+		code, host, port, seconds)
+	if err := s.Start(ctx); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	s.Stop()
+	return nil
 }
 
 func hapsToJSON(haps []core.Hap) []map[string]any {

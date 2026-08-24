@@ -119,7 +119,7 @@ Open `http://localhost:8080` after `serve` — the page contains an editor with 
 
 ## CLI Reference
 
-The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Four subcommands:
+The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Five subcommands:
 
 | Command | Usage | Effect |
 |---|---|---|
@@ -127,6 +127,7 @@ The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Four sub
 | `eval` | `saint-hubbins eval <code>` | Parses `<code>` as mini or control expression, queries 0..1 cycle, prints JSON |
 | `serve` | `saint-hubbins serve [addr]` | Starts the console server. Default `addr` is `:8080`. |
 | `render` | `saint-hubbins render <out.wav> <code>` | Renders `<code>` for 4 cycles at 48 kHz and writes a 16-bit mono WAV |
+| `play` | `saint-hubbins play <code> [host] [port] [secs]` | Streams `<code>` to SuperDirt over OSC. Defaults: `host` `127.0.0.1`, `port` `57120`, `secs` `8` |
 
 `eval` and `render` accept **mini-notation** — the rhythm language documented in
 [the tutorial](docs/tutorial/02-mini-notation.md). Function-call syntax such as

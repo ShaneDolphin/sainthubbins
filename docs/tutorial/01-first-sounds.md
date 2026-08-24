@@ -15,17 +15,18 @@ Now ask the binary what it can do:
 
 ```console
 $ go run ./cmd/saint-hubbins
-Usage: saint-hubbins <eval|serve|render|query> [args]
+Usage: saint-hubbins <eval|serve|render|play|query> [args]
   eval <code>        — evaluate pattern string
   query              — demo query: Stack(s("bd"), s("sd"))
   serve [addr]       — start live console server (default :8080)
   render <out.wav> <code> — offline render to WAV
+  play <code> [host] [port] [secs] — stream to SuperDirt over OSC
   (also available as 'hubbins' — these go to eleven)
 ```
 
 (It exits with status 1, since you gave it no command.)
 
-Four commands. You will use `eval` to look at patterns, `render` to hear them,
+Five commands. You will use `eval` to look at patterns, `render` to hear them,
 and `serve` for the browser console.
 
 ## Look at a pattern
