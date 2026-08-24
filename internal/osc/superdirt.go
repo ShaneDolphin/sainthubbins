@@ -12,9 +12,13 @@ import (
 
 // DirtArgs flattens a hap into SuperDirt's alternating key/value argument list.
 //
-// A hap's value is normally a control bag; raw mini-notation produces a bare
-// string or number instead, which maps to s and n respectively. cps and delta
-// always travel with the event because SuperDirt sizes its envelope from them.
+// A hap's value is normally a control bag (map[string]any). Raw mini-notation
+// produces bare values: a bare string becomes s (sound name), and a bare Go
+// numeric type (int, int64, float32, float64, uint64) becomes n (note number).
+// Note that mini.go stores raw numeric tokens as strings, so "3" arrives as s,
+// not n; numeric identity requires either a Go numeric type or a control such
+// as core.N or core.Note which produce a control bag. cps and delta always
+// travel with the event because SuperDirt sizes its envelope from them.
 func DirtArgs(h core.Hap, cps, duration float64) []any {
 	out := make([]any, 0, 16)
 
@@ -36,8 +40,18 @@ func DirtArgs(h core.Hap, cps, duration float64) []any {
 		out = append(out, "s", v)
 	case int:
 		out = append(out, "n", v)
+	case int64:
+		out = append(out, "n", v)
+	case float32:
+		out = append(out, "n", v)
 	case float64:
 		out = append(out, "n", v)
+	case uint64:
+		out = append(out, "n", v)
+	default:
+		// Unrecognized types (including nil) produce no s/n parameter.
+		// This preserves the default synth if one is configured upstream,
+		// and catches silent data loss from unexpected type mismatches.
 	}
 
 	out = append(out, "cps", cps, "delta", duration)
