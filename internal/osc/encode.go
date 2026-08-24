@@ -37,12 +37,18 @@ func EncodeMessage(addr string, args ...any) ([]byte, error) {
 			tags = append(tags, 's')
 			body.Write(padString(v))
 		case int:
+			if v > math.MaxInt32 || v < math.MinInt32 {
+				return nil, fmt.Errorf("osc: int argument %d out of int32 range", v)
+			}
 			tags = append(tags, 'i')
 			_ = binary.Write(&body, binary.BigEndian, int32(v))
 		case int32:
 			tags = append(tags, 'i')
 			_ = binary.Write(&body, binary.BigEndian, v)
 		case int64:
+			if v > math.MaxInt32 || v < math.MinInt32 {
+				return nil, fmt.Errorf("osc: int64 argument %d out of int32 range", v)
+			}
 			tags = append(tags, 'i')
 			_ = binary.Write(&body, binary.BigEndian, int32(v))
 		case float32:

@@ -5,6 +5,7 @@ package osc
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 	"testing"
 	"time"
 )
@@ -52,6 +53,34 @@ func TestEncodeMessageLayout(t *testing.T) {
 func TestEncodeMessageRejectsUnsupportedType(t *testing.T) {
 	if _, err := EncodeMessage("/x", struct{}{}); err == nil {
 		t.Fatal("want an error for an unsupported argument type, got nil")
+	}
+}
+
+func TestEncodeMessageRejectsOutOfRangeInt64(t *testing.T) {
+	// Verified before this fix: EncodeMessage("/x", int64(3000000000)) wrote
+	// the wrapped-around value -1294967296 with no error, contradicting this
+	// function's own doc comment ("an error rather than a silently dropped
+	// value").
+	if _, err := EncodeMessage("/x", int64(3000000000)); err == nil {
+		t.Fatal("want an error for an int64 outside the int32 range, got nil")
+	}
+	if _, err := EncodeMessage("/x", int64(math.MinInt32)-1); err == nil {
+		t.Fatal("want an error for an int64 just below math.MinInt32, got nil")
+	}
+}
+
+func TestEncodeMessageAcceptsInt32Boundaries(t *testing.T) {
+	if _, err := EncodeMessage("/x", int64(math.MaxInt32)); err != nil {
+		t.Errorf("int64(math.MaxInt32) should still encode: %v", err)
+	}
+	if _, err := EncodeMessage("/x", int64(math.MinInt32)); err != nil {
+		t.Errorf("int64(math.MinInt32) should still encode: %v", err)
+	}
+	if _, err := EncodeMessage("/x", int(math.MaxInt32)); err != nil {
+		t.Errorf("int(math.MaxInt32) should still encode: %v", err)
+	}
+	if _, err := EncodeMessage("/x", int(math.MinInt32)); err != nil {
+		t.Errorf("int(math.MinInt32) should still encode: %v", err)
 	}
 }
 
