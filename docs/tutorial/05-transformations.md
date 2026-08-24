@@ -83,8 +83,8 @@ Starting from `core.Silence()` and swapping *in* a pattern is the idiom for
 b.Superimpose(func(p core.Pattern) core.Pattern { return p.FastF(core.NewFraction(2, 1)) })
 ```
 
-Keeps the original **and** adds the transformed copy. Eight events instead of
-four.
+Keeps the original **and** adds the transformed copy — twelve events here, not
+eight: the four originals plus eight from the doubled-speed copy.
 
 ### `Off(t, fn)` — a delayed copy
 

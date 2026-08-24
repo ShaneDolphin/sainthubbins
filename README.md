@@ -153,16 +153,16 @@ When `serve` is running, the server exposes:
 |---|---|---|---|
 | `GET` | `/` | — | Console HTML (editor + JS `fetch` to `/api/evaluate`) |
 | `GET` | `/health` | — | `ok` |
-| `POST` | `/api/evaluate` | `{"code":"s(\"bd sd\")"}` | `{"haps":[{"whole":"0/1 → 1/2","part":"0/1 → 1/2","value":{"s":"bd"}}, ...]}` |
+| `POST` | `/api/evaluate` | `{"code":"bd sd"}` | `{"haps":[{"whole":"0/1 → 1/2","part":"0/1 → 1/2","value":"bd"}, ...]}` |
 | `POST` | `/api/pianoroll` | `{"code":"..."}` | `{"haps":[... with time/duration ...]}` queried over 0..2 cycles |
-| `GET` | `/static/*` | — | Files under `web/static/` (including `saint-hubbins.wasm` and `wasm_exec.js`) |
+| `GET` | `/static/*` | — | Files under `web/static/`. `saint-hubbins.wasm` and `wasm_exec.js` are build products — run `make wasm` to generate them |
 
 CORS headers (`Access-Control-Allow-Origin: *`) are set for API routes; `OPTIONS` preflight returns 204.
 
 ```bash
 curl -s -X POST http://localhost:8080/api/evaluate \
   -H 'Content-Type: application/json' \
-  -d '{"code":"s(\"bd sd\")"}' | jq .
+  -d '{"code":"bd sd"}' | jq .
 
 curl -s -X POST http://localhost:8080/api/pianoroll \
   -H 'Content-Type: application/json' \
@@ -252,7 +252,6 @@ haps := pat.Query(core.NewState(span))
 | `0 .. 4` | Range 0..4 inclusive | `0 .. 4` |
 | `bd:1` | Sample index via control `n` | `bd:3` → `s=bd n=3` |
 | `a,b` | Stack layers | `a,b` or `a , b` |
-| `// comment` | Comment ignored | `bd sd // kick-snare` |
 
 ---
 

@@ -20,7 +20,10 @@ Usage: saint-hubbins <eval|serve|render|query> [args]
   query              — demo query: Stack(s("bd"), s("sd"))
   serve [addr]       — start live console server (default :8080)
   render <out.wav> <code> — offline render to WAV
+  (also available as 'hubbins' — these go to eleven)
 ```
+
+(It exits with status 1, since you gave it no command.)
 
 Four commands. You will use `eval` to look at patterns, `render` to hear them,
 and `serve` for the browser console.

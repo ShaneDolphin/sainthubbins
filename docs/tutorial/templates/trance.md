@@ -7,7 +7,7 @@ trance.wav — 455 events over 8 bars, 16.0s, peak 0.82
 
 Source: [`examples/trance/main.go`](../../../examples/trance/main.go)
 
-The busiest of the eight — 455 events, nearly twelve times the minimal dubstep
+The busiest of the eight — 455 events, nearly eleven times the minimal dubstep
 template. It is built on one trick: the kick lands on the beat, and the bass
 answers in every single gap between kicks.
 
