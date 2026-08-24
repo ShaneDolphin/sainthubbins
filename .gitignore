@@ -1,0 +1,51 @@
+# ---- Build output ----------------------------------------------------------
+# Compiled binaries from `go build` (cmd/ package names, no extension)
+/saint-hubbins
+/saint-hubbins-wasm
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# WASM build products — regenerate with `make wasm`
+web/static/*.wasm
+web/static/wasm_exec.js
+
+# ---- Generated media -------------------------------------------------------
+# Offline audio renders
+*.wav
+*.aiff
+*.mp3
+*.flac
+
+# ---- Secrets & local config ------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+secrets.yml
+secrets.yaml
+
+# ---- Local tooling ---------------------------------------------------------
+.claude/
+.claude-*/
+*.local.json
+
+# ---- Editors & OS ----------------------------------------------------------
+.DS_Store
+.AppleDouble
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Misc ------------------------------------------------------------------
+*.log
+tmp/
+.tmp/
+vendor/
