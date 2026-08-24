@@ -33,7 +33,27 @@ func addValues(a, b any) any {
 
 	default:
 		out := cloneBag(am)
+		// The primary field (note/n/freq) gets the same no-op-on-non-numeric
+		// protection as the bag+number direction, routed through
+		// addIntoField, instead of the generic right-hand-wins merge below.
+		// Right-hand-wins is correct for a non-primary collision (it is what
+		// protects s:"bd" vs s:"sd"), but on the primary field it would do
+		// exactly what addIntoField exists to prevent: Note("c3").Add(Note(60))
+		// must leave "c3" untouched, not overwrite it with 60, and
+		// Note(60).Add(Note("c3")) must leave 60 untouched rather than
+		// destroy it with a string that has nothing numeric to add.
+		primary := primaryNumeric(am)
 		for k, v := range bm {
+			if k == primary {
+				if vf, ok := numericValue(v); ok {
+					addIntoField(out, k, vf)
+				}
+				// else: the right-hand side's primary field isn't genuinely
+				// numeric (e.g. a named note) — there's nothing sensible to
+				// add, so the left-hand value already cloned into out is
+				// left exactly as it was.
+				continue
+			}
 			existing, ok := out[k]
 			if !ok {
 				out[k] = v
