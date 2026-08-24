@@ -74,17 +74,55 @@ func TestClientWithoutHostIsANoOp(t *testing.T) {
 	}
 }
 
+// Connect must dial eagerly and report failure for a host it cannot reach,
+// so a caller (runPlay) can fail fast instead of finding out on the first
+// event. A host string containing a null byte fails inside net.Dial itself
+// ("invalid argument") without performing any DNS lookup or other network
+// access, which keeps this deterministic — the same reasoning applied to
+// TestClientRecoversFromDialFailure above.
+func TestClientConnectFailsForUnreachableHost(t *testing.T) {
+	c := New("127.0.0.1\x00evil", 57120)
+	defer c.Close()
+
+	if err := c.Connect(); err == nil {
+		t.Fatal("Connect: want an error for a host net.Dial cannot use, got nil")
+	}
+}
+
+// Connect must succeed for a reachable loopback peer, and a hostless client
+// must remain a successful no-op sink.
+func TestClientConnectSucceedsForLoopback(t *testing.T) {
+	_, port := listener(t)
+	c := New("127.0.0.1", port)
+	defer c.Close()
+
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+}
+
+func TestClientConnectHostlessIsANoOp(t *testing.T) {
+	c := New("", 0)
+	defer c.Close()
+
+	if err := c.Connect(); err != nil {
+		t.Errorf("Connect on a hostless client should be a no-op, got %v", err)
+	}
+}
+
 // A dial failure must not brick the client permanently: once the underlying
 // condition clears, a later Send should succeed rather than replaying a
-// cached error forever. "invalid.invalid" is reserved by RFC 2606 to never
-// resolve, so the first dial fails deterministically without touching the
-// network.
+// cached error forever. The first dial targets an out-of-range port, which
+// net.Dial rejects immediately and locally ("address 999999: invalid port")
+// without any network access — unlike a DNS lookup for a reserved hostname
+// such as "invalid.invalid", which a captive-portal or corporate resolver
+// that hijacks NXDOMAIN can resolve anyway, making that approach flaky.
 func TestClientRecoversFromDialFailure(t *testing.T) {
-	c := New("invalid.invalid", 9999)
+	c := New("127.0.0.1", 999999)
 	defer c.Close()
 
 	if err := c.Send("/dirt/play", "s", "bd"); err == nil {
-		t.Fatalf("Send: expected the first dial (to invalid.invalid) to fail")
+		t.Fatalf("Send: expected the first dial (to the out-of-range port) to fail")
 	}
 
 	conn, port := listener(t)
