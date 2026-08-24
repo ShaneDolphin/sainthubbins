@@ -47,7 +47,8 @@ func DirtArgs(h core.Hap, cps, duration float64) []any {
 	case float64:
 		out = append(out, "n", v)
 	case uint64:
-		out = append(out, "n", v)
+		// Convert to int64 since the OSC encoder only handles signed integers.
+		out = append(out, "n", int64(v))
 	default:
 		// Unrecognized types (including nil) produce no s/n parameter.
 		// This preserves the default synth if one is configured upstream,

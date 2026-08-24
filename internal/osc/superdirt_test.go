@@ -123,3 +123,41 @@ func TestDirtArgsBareNumericStringIsASoundName(t *testing.T) {
 		t.Error("a bare numeric string should not produce n")
 	}
 }
+
+func TestDirtArgsOutputsCanBeEncoded(t *testing.T) {
+	// Every value type that DirtArgs emits must be encodable by EncodeMessage.
+	// This is the contract between these layers: DirtArgs produces only types
+	// the encoder can handle. This test would catch any regression where a new
+	// type is emitted but the encoder cannot encode it (e.g., the uint64 case
+	// before it was converted to int64).
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{"bare string", "bd"},
+		{"bare int", 42},
+		{"bare int64", int64(99)},
+		{"bare float32", float32(3.14)},
+		{"bare float64", 2.71},
+		{"bare uint64", uint64(100)},
+		{"control bag with multiple types", map[string]any{
+			"s":    "kick",
+			"gain": 0.8,
+			"n":    5,
+			"pan":  float32(0.5),
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := hapOf(tt.value)
+			args := DirtArgs(h, 0.5, 0.25)
+
+			// Attempt to encode all args produced by DirtArgs.
+			_, err := EncodeMessage(DirtAddress, args...)
+			if err != nil {
+				t.Errorf("EncodeMessage failed for %s: %v", tt.name, err)
+			}
+		})
+	}
+}
