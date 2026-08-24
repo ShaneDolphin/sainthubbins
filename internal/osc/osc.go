@@ -20,17 +20,18 @@ type Client struct {
 	Host string
 	Port int
 
-	mu      sync.Mutex
-	conn    net.Conn
-	dialErr error
-	dialed  bool
+	mu     sync.Mutex
+	conn   net.Conn
+	dialed bool
 }
 
 // New creates a client. It does not dial — UDP has no handshake worth doing
 // eagerly, and construction should not fail.
 func New(host string, port int) *Client { return &Client{Host: host, Port: port} }
 
-// ensure dials once, on first use.
+// ensure dials on first use and again after any dial that failed, so a
+// transient failure (a DNS hiccup, SuperDirt not up yet) does not brick the
+// client for the rest of the process. Only a successful dial is cached.
 func (c *Client) ensure() (net.Conn, error) {
 	if c.Host == "" {
 		return nil, nil
@@ -38,11 +39,14 @@ func (c *Client) ensure() (net.Conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.dialed {
-		return c.conn, c.dialErr
+		return c.conn, nil
 	}
-	c.dialed = true
-	c.conn, c.dialErr = net.Dial("udp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
-	return c.conn, c.dialErr
+	conn, err := net.Dial("udp", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	if err != nil {
+		return nil, err
+	}
+	c.conn, c.dialed = conn, true
+	return c.conn, nil
 }
 
 func (c *Client) write(b []byte) error {

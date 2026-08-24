@@ -73,3 +73,34 @@ func TestClientWithoutHostIsANoOp(t *testing.T) {
 		t.Errorf("Close: %v", err)
 	}
 }
+
+// A dial failure must not brick the client permanently: once the underlying
+// condition clears, a later Send should succeed rather than replaying a
+// cached error forever. "invalid.invalid" is reserved by RFC 2606 to never
+// resolve, so the first dial fails deterministically without touching the
+// network.
+func TestClientRecoversFromDialFailure(t *testing.T) {
+	c := New("invalid.invalid", 9999)
+	defer c.Close()
+
+	if err := c.Send("/dirt/play", "s", "bd"); err == nil {
+		t.Fatalf("Send: expected the first dial (to invalid.invalid) to fail")
+	}
+
+	conn, port := listener(t)
+	c.Host, c.Port = "127.0.0.1", port
+
+	if err := c.Send("/dirt/play", "s", "bd"); err != nil {
+		t.Fatalf("Send after recovery: %v", err)
+	}
+
+	buf := make([]byte, 1024)
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("nothing received: %v", err)
+	}
+	if !bytes.HasPrefix(buf[:n], []byte("/dirt/play\x00\x00")) {
+		t.Errorf("received %q, want a /dirt/play message", buf[:n])
+	}
+}
