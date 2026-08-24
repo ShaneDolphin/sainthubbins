@@ -110,10 +110,15 @@ func parseSequence(input string) core.Pattern {
 	}
 	// Depth-0 "," and "|" are handled at the top of this function, before
 	// tokenizing, so any isolated separator reaching this point is a degenerate
-	// input such as "," on its own. parseToken handles those.
-	if len(tokens) == 1 {
-		return parseToken(tokens[0])
-	}
+	// input such as "," on its own; the loop below skips it and falls through
+	// to Silence.
+	//
+	// A single real token used to shortcut straight to parseToken(tokens[0]),
+	// bypassing weight stripping — "bd@3" would then reach parseToken still
+	// carrying its "@3" suffix, and since parseToken no longer understands
+	// "@" the raw suffix leaked into the value. Every token, including a lone
+	// one, must go through splitWeight first.
+	//
 	// Collect steps with their weights. When every weight is 1 this is exactly
 	// FastCat; otherwise the steps divide the cycle in proportion.
 	var (
@@ -133,13 +138,17 @@ func parseSequence(input string) core.Pattern {
 	if len(weighted) == 0 {
 		return core.Silence()
 	}
+	if len(weighted) == 2 {
+		// Exactly one step: there are no siblings for its weight to be
+		// relative to, so the weight is discarded — the value still needs
+		// splitWeight to strip a trailing "@n", but the timing already
+		// spans the full cycle without TimeCatWeighted's involvement.
+		return weighted[1].(core.Pattern)
+	}
 	if !weightedAny {
 		pats := make([]core.Pattern, 0, len(weighted)/2)
 		for i := 1; i < len(weighted); i += 2 {
 			pats = append(pats, weighted[i].(core.Pattern))
-		}
-		if len(pats) == 1 {
-			return pats[0]
 		}
 		return core.FastCat(pats...)
 	}

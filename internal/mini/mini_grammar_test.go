@@ -45,3 +45,47 @@ func TestMiniWithoutWeightIsUnchanged(t *testing.T) {
 		t.Errorf("unweighted sequence changed: %v", got)
 	}
 }
+
+// TestMiniSingleTokenWeightStripsValue guards against a shortcut that used
+// to bypass splitWeight entirely for a lone token: parseSequence special
+// cased len(tokens) == 1 and called parseToken(tokens[0]) directly, so
+// "bd@3" reached parseToken still carrying "@3", and since parseToken no
+// longer understands "@" the raw suffix leaked into the hap value.
+func TestMiniSingleTokenWeightStripsValue(t *testing.T) {
+	haps := Mini("bd@3").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	if len(haps) != 1 {
+		t.Fatalf("got %d haps, want 1: %v", len(haps), haps)
+	}
+	if haps[0].Value != "bd" {
+		t.Errorf("value = %v, want %q — a lone step's @n must not leak into the value", haps[0].Value, "bd")
+	}
+	if haps[0].Part.Begin.Float64() != 0 || haps[0].Part.End.Float64() != 1 {
+		t.Errorf("span = %v..%v, want 0..1 — a single step has no sibling to weight against",
+			haps[0].Part.Begin.Float64(), haps[0].Part.End.Float64())
+	}
+}
+
+// TestMiniBracketedSingleTokenWeightStripsValue covers the same shortcut bug
+// reached through a bracket group: parseToken unwraps "[bd@3]" and calls
+// parseSequence("bd@3"), landing on the same single-token path.
+func TestMiniBracketedSingleTokenWeightStripsValue(t *testing.T) {
+	haps := Mini("[bd@3] sd").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	if len(haps) != 2 {
+		t.Fatalf("got %d haps, want 2: %v", len(haps), haps)
+	}
+	var sawBD bool
+	for _, h := range haps {
+		if h.Value == "bd@3" {
+			t.Fatalf("value = %v, the @3 suffix must not leak into the value", h.Value)
+		}
+		if h.Value == "bd" {
+			sawBD = true
+			if h.Part.Begin.Float64() != 0 || h.Part.End.Float64() != 0.5 {
+				t.Errorf("bd span = %v..%v, want 0..0.5", h.Part.Begin.Float64(), h.Part.End.Float64())
+			}
+		}
+	}
+	if !sawBD {
+		t.Errorf("no clean %q hap found: %v", "bd", haps)
+	}
+}
