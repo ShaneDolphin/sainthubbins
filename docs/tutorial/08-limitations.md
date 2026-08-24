@@ -60,21 +60,6 @@ mask := core.FastCat(core.Pure(true), core.Pure(false), core.Pure(true), core.Pu
 core.Note(mini.Mini("c3")).Struct(mask)                   // 3 events
 ```
 
-## `Add` does not transpose a wrapped pattern
-
-```go
-core.Note(mini.Mini("0 4 7")).Add(12)   // every event becomes plain 12
-```
-
-`Add` on a pattern already wrapped in a control replaces the control bag with a
-bare number. Add first, wrap second:
-
-```go
-core.Note(core.Pure(60).Add(12))        // map[note:72]
-```
-
-Or just write the note names you want.
-
 ## Tempo is a ratio, not a setting
 
 The renderer runs at a fixed two seconds per cycle. There is no BPM parameter —
@@ -94,8 +79,7 @@ HTTP instead. The WASM target builds and is unused.
 So the list above does not leave the wrong impression, these are dependable:
 
 - Exact rational timing. Events that should coincide always do; nothing drifts.
-- The mini-notation grammar in [chapter 2](02-mini-notation.md), minus the row
-  above.
+- The mini-notation grammar in [chapter 2](02-mini-notation.md).
 - Every transformation in [chapter 5](05-transformations.md), including
   `Every` and `LastOf` across multi-cycle renders.
 - Layering with `Stack`, and control merging with `Set`.

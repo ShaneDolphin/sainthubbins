@@ -152,15 +152,21 @@ Measured: 64 events over four bars becomes 45 at `0.3`, 37 at `0.5`.
 To transpose, change the note names — `"c2 eb2 g2"` to `"d2 f2 a2"`. That always
 works and is the clearest thing to read.
 
-To transpose arithmetically, work in MIDI numbers and **add before wrapping in a
-control**:
+To transpose arithmetically, work in MIDI numbers or scale degrees. `Add` on an
+already-wrapped pattern transposes it in place — it adds into the bag's
+`note` field and leaves every other control untouched:
 
 ```go
-core.Note(core.Pure(60).Add(12))   // map[note:72] — C4 up an octave
+core.Note(mini.Mini("0 4 7")).Add(12)   // map[note:12], map[note:16], map[note:19]
+core.Note(core.Pure(60)).Add(12)        // map[note:72] — C4 up an octave
 ```
 
-`Add` on an already-wrapped pattern does not do this — see
-[Limitations](08-limitations.md).
+This works because the values above are numbers (or numeric mini-notation
+strings like `"0"`). Note *names* such as `"c3"` are kept as strings in the
+control bag until the sound engine parses them, so `Add` cannot do arithmetic
+on them — `core.Note(mini.Mini("c3")).Add(12)` does not transpose the note.
+Use note names when you want to write pitches directly, and numbers when you
+want to transpose them.
 
 ## Choosing one
 
