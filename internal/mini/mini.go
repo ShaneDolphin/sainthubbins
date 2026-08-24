@@ -108,73 +108,9 @@ func parseSequence(input string) core.Pattern {
 			}
 		}
 	}
-	// Handle choice operator "|" at sequence level: "a | b | c" -> Choose
-	// Detect isolated "|" tokens
-	hasPipe := false
-	for _, t := range tokens {
-		if t == "|" {
-			hasPipe = true
-			break
-		}
-	}
-	if hasPipe {
-		// Split by "|"
-		var groups [][]string
-		var cur []string
-		for _, t := range tokens {
-			if t == "|" {
-				groups = append(groups, cur)
-				cur = nil
-			} else {
-				cur = append(cur, t)
-			}
-		}
-		groups = append(groups, cur)
-		choices := make([]any, 0, len(groups))
-		for _, g := range groups {
-			if len(g) == 0 {
-				continue
-			}
-			// Reconstruct mini string for group and parse
-			choicePat := Mini(strings.Join(g, " "))
-			choices = append(choices, choicePat)
-		}
-		if len(choices) > 0 {
-			return core.Pure(0).Choose(choices)
-		}
-	}
-	// Handle stack with commas at sequence level without curly? "a,b" already handled as token "a,b" but spaced "a , b" not
-	// For consistency, also handle isolated "," tokens as stack
-	hasComma := false
-	for _, t := range tokens {
-		if t == "," {
-			hasComma = true
-			break
-		}
-	}
-	if hasComma {
-		var groups [][]string
-		var cur []string
-		for _, t := range tokens {
-			if t == "," {
-				groups = append(groups, cur)
-				cur = nil
-			} else {
-				cur = append(cur, t)
-			}
-		}
-		groups = append(groups, cur)
-		pats := make([]core.Pattern, 0, len(groups))
-		for _, g := range groups {
-			if len(g) == 0 {
-				continue
-			}
-			pats = append(pats, Mini(strings.Join(g, " ")))
-		}
-		if len(pats) > 0 {
-			return core.Stack(pats...)
-		}
-	}
+	// Depth-0 "," and "|" are handled at the top of this function, before
+	// tokenizing, so any isolated separator reaching this point is a degenerate
+	// input such as "," on its own. parseToken handles those.
 	if len(tokens) == 1 {
 		return parseToken(tokens[0])
 	}
@@ -277,9 +213,29 @@ func splitAtDepth0(s string, sep byte) []string {
 	return append(parts, s[start:])
 }
 
+// closerFor returns the bracket that closes open, or 0 if open is not an
+// opening bracket.
+func closerFor(open byte) byte {
+	switch open {
+	case '[':
+		return ']'
+	case '<':
+		return '>'
+	case '(':
+		return ')'
+	case '{':
+		return '}'
+	}
+	return 0
+}
+
 // unwrapGroup returns the inner text of a token that is wholly enclosed by a
-// single bracket pair — "[a b]" -> "a b" — so the group is parsed as a unit
-// before any operator scanning happens.
+// single matched bracket pair — "[a b]" -> "a b" — so the group is parsed as a
+// unit before any operator scanning happens.
+//
+// The closing bracket must match the opening one. Without that check "[bd)"
+// and "<bd]" would parse as though correctly closed, turning a typo into a
+// plausible but different pattern instead of leaving it as a visible literal.
 func unwrapGroup(tok string) (inner string, open byte, ok bool) {
 	if len(tok) < 2 {
 		return "", 0, false
@@ -295,6 +251,9 @@ func unwrapGroup(tok string) (inner string, open byte, ok bool) {
 			// Closed early: the group does not span the whole token
 			// (e.g. "[a b]*2"), so leave it to the operator handlers.
 			if i != len(tok)-1 {
+				return "", 0, false
+			}
+			if tok[i] != closerFor(open) {
 				return "", 0, false
 			}
 			return tok[1 : len(tok)-1], open, true
@@ -315,12 +274,30 @@ func parseToken(tok string) core.Pattern {
 		case '[':
 			return parseSequence(inner)
 		case '<':
-			toks := splitMiniTokens(inner)
-			pats := make([]core.Pattern, len(toks))
-			for i, t := range toks {
-				pats[i] = parseToken(t)
+			// Depth-0 commas stack independent alternations, matching the way
+			// they stack sequences inside "[...]": "<a b, c d>" layers
+			// SlowCat(a, b) with SlowCat(c, d). Splitting here also stops a
+			// trailing comma riding along on a token and producing an
+			// empty-valued hap.
+			var pats []core.Pattern
+			for _, part := range splitAtDepth0(inner, ',') {
+				toks := splitMiniTokens(strings.TrimSpace(part))
+				if len(toks) == 0 {
+					continue
+				}
+				sub := make([]core.Pattern, len(toks))
+				for i, t := range toks {
+					sub[i] = parseToken(t)
+				}
+				pats = append(pats, core.SlowCat(sub...))
 			}
-			return core.SlowCat(pats...)
+			switch len(pats) {
+			case 0:
+				return core.Silence()
+			case 1:
+				return pats[0]
+			}
+			return core.Stack(pats...)
 		}
 		// '{' (polymeter) and '(' fall through to their existing handlers.
 	}

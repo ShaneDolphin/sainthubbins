@@ -38,10 +38,13 @@ func main() {
 		Set(core.Cutoff(220)).
 		Set(core.Gain(1.0))
 
-	// A stab on a Euclidean rhythm, offset so it never lines up with the snare.
+	// A stab on a Euclidean rhythm, nudged a sixteenth late so it never lands
+	// on the kick or the snare. Euclid(3,8) alone would put a hit at 3/8; the
+	// offset moves the three hits to 1/16, 7/16 and 13/16, threading them
+	// between the kit rather than doubling it.
 	stab := core.Note(mini.Mini("[c3,eb3,g3]")).
 		Euclid(3, 8).
-		Late(0.125).
+		Late(0.0625).
 		Set(core.Cutoff(1800)).
 		Set(core.Gain(0.22))
 

@@ -29,7 +29,7 @@ func main() {
 		DegradeBy(0.15).
 		Set(core.Gain(0.3))
 
-	// Step 4 — a bassline in C minor that leaves beat 3 open.
+	// Step 4 — a bassline in C minor that leaves beat 2 open.
 	bass := core.Note(mini.Mini("c2 ~ c2 eb2")).
 		Set(core.Cutoff(600)).
 		Set(core.Gain(0.7))

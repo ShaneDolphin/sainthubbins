@@ -23,7 +23,7 @@ differing by nearly a factor of seven.
 | [Techno](techno.md) | 132 | 261 | 0.83 | Relentless, dark, almost nothing on top |
 | [Minimal dubstep](minimal-dubstep.md) | 140 | **42** | 0.58 | Half-time; the silence is the instrument |
 | [Maximal dubstep](maximal-dubstep.md) | 140 | **279** | 0.76 | The same skeleton, every gap filled |
-| [Drum and bass](drum-and-bass.md) | 174 | 319 | 0.79 | Fast drums, slow bassline |
+| [Drum and bass](drum-and-bass.md) | 174 | 319 | 0.77 | Fast drums, slow bassline |
 | [Electronica](electronica.md) | 110 | 215 | 0.74 | Broken beat, melody led |
 | [Trance](trance.md) | 138 | 455 | 0.82 | Off-beat bass locked to the kick |
 

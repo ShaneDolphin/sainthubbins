@@ -99,7 +99,7 @@ Note the difference from the drums: `core.Note`, not `core.S`, because these are
 pitches. `Cutoff(600)` rolls the top off so the bass sits under the hats instead
 of fighting them.
 
-The rest on beat 3 matters as much as the notes. That is 105 events, peak 0.76.
+The rest on beat 2 matters as much as the notes — the line lands on beats 1, 3 and 4. That is 105 events, peak 0.76.
 
 ## Step 5 — a chord
 

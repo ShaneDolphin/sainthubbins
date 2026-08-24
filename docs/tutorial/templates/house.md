@@ -62,8 +62,8 @@ bass := core.Note(mini.Mini("a1 ~ a1 c2")).
 
 `core.Note`, not `core.S`, because these are pitches rather than drum names.
 
-The line is in A minor and deliberately leaves beat 3 empty, so it pushes
-against the kick instead of doubling it. `Cutoff(700)` rolls off the top so the
+The line is in A minor and deliberately leaves beat 2 empty, so it pushes
+against the kick instead of doubling it. The notes fall on beats 1, 3 and 4. `Cutoff(700)` rolls off the top so the
 bass stays underneath the hats.
 
 ### The chord stabs

@@ -168,3 +168,61 @@ func TestMiniDocumentedSyntax(t *testing.T) {
 		}
 	}
 }
+
+// A group must be closed by its own bracket. Accepting any closer turns a typo
+// into a plausible but different pattern instead of an obvious literal.
+func TestMiniMismatchedBracketsAreNotGroups(t *testing.T) {
+	for _, code := range []string{"<bd]", "[bd)", "{bd]", "[bd>"} {
+		haps := Mini(code).QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+		if len(haps) != 1 {
+			t.Fatalf("%q: got %d haps, want 1 literal", code, len(haps))
+		}
+		got, ok := haps[0].Value.(string)
+		if !ok || got != code {
+			t.Errorf("%q parsed as %v; a mismatched pair should stay a literal atom", code, haps[0].Value)
+		}
+	}
+	// The matched forms must still parse as groups.
+	for _, code := range []string{"<bd sd>", "[bd sd]"} {
+		if n := len(values(Mini(code))); n == 0 {
+			t.Errorf("%q should still parse as a group, got %d haps", code, n)
+		}
+	}
+}
+
+// Depth-0 commas inside <> stack alternations, the same way they stack
+// sequences inside []. Previously the comma rode along on a token and produced
+// an empty-valued hap.
+func TestMiniAngleBracketCommaStacks(t *testing.T) {
+	code := "<bd sd, hh cp>"
+	p := Mini(code)
+	noGarbage(t, code, p)
+
+	// Cycle 0 takes the first item of each layer, cycle 1 the second.
+	for cycle, want := range map[int64][]string{0: {"bd", "hh"}, 1: {"sd", "cp"}} {
+		haps := p.QueryArc(core.FractionFromInt(cycle), core.FractionFromInt(cycle+1))
+		if len(haps) != 2 {
+			t.Fatalf("%q cycle %d: got %d haps, want 2", code, cycle, len(haps))
+		}
+		seen := map[string]bool{}
+		for _, h := range haps {
+			s, ok := h.Value.(string)
+			if !ok || s == "" {
+				t.Fatalf("%q cycle %d: empty or non-string value %v", code, cycle, h.Value)
+			}
+			seen[s] = true
+		}
+		for _, w := range want {
+			if !seen[w] {
+				t.Errorf("%q cycle %d: missing %q, got %v", code, cycle, w, seen)
+			}
+		}
+	}
+
+	// A choice operator alongside the comma must not leave a stray empty hap.
+	for _, h := range Mini("<bd|sd, hh|cp>").QueryArc(core.FractionFromInt(0), core.FractionFromInt(1)) {
+		if s, ok := h.Value.(string); ok && s == "" {
+			t.Errorf(`"<bd|sd, hh|cp>" produced an empty-valued hap`)
+		}
+	}
+}

@@ -29,7 +29,7 @@ func main() {
 	hats := core.S(mini.Mini("[~ hh]*4")).
 		Set(core.Gain(0.3))
 
-	// Bassline in A minor, following the kick but leaving beat 3 open.
+	// Bassline in A minor, following the kick but leaving beat 2 open.
 	bass := core.Note(mini.Mini("a1 ~ a1 c2")).
 		Set(core.Cutoff(700)).
 		Set(core.Gain(0.7))

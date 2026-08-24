@@ -56,6 +56,17 @@ func (r *OfflineRenderer) RenderOffline(pattern core.Pattern, cycles int) ([]flo
 		if h.Whole == nil {
 			continue
 		}
+		// Render each note once, from the fragment that carries its onset.
+		//
+		// A query spanning several cycles is split per cycle by combinators
+		// such as Every, LastOf and SometimesBy, which cuts a note held across
+		// a cycle boundary into one fragment per cycle. Every fragment repeats
+		// the same Whole, so timing below would place them all in the same
+		// sample range and the += would sum the note into itself, multiplying
+		// its amplitude by the number of cycles it spans.
+		if !h.HasOnset() {
+			continue
+		}
 		startSec := h.Whole.Begin.Float64() / cps
 		endSec := h.Whole.End.Float64() / cps
 		durSec := endSec - startSec
