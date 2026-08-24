@@ -51,12 +51,10 @@ into a separate project.
 
 | Syntax | Expected | Actual here |
 |--------|----------|-------------|
-| `bd@3 sd` | bd holds three quarters of the bar | **no effect** — identical to `bd sd` |
 | `bd!3 sd` | four equal steps | three bds inside the *first half* |
 | `{a b, c d e}%4` | four steps per cycle | **no effect** — the suffix is ignored |
 
-Workarounds: use `<>` to hold a note for a bar, and write repeats out in full
-(`"bd bd bd sd"`) instead of using `!`.
+Workaround: write repeats out in full (`"bd bd bd sd"`) instead of using `!`.
 
 ## `Struct` needs Go booleans
 

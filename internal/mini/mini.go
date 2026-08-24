@@ -114,14 +114,51 @@ func parseSequence(input string) core.Pattern {
 	if len(tokens) == 1 {
 		return parseToken(tokens[0])
 	}
-	pats := make([]core.Pattern, 0, len(tokens))
+	// Collect steps with their weights. When every weight is 1 this is exactly
+	// FastCat; otherwise the steps divide the cycle in proportion.
+	var (
+		weighted    []any
+		weightedAny bool
+	)
 	for _, tok := range tokens {
 		if tok == ".." || tok == "|" || tok == "," {
 			continue
 		}
-		pats = append(pats, parseToken(tok))
+		base, w := splitWeight(tok)
+		if w != 1 {
+			weightedAny = true
+		}
+		weighted = append(weighted, w, parseToken(base))
 	}
-	return core.FastCat(pats...)
+	if len(weighted) == 0 {
+		return core.Silence()
+	}
+	if !weightedAny {
+		pats := make([]core.Pattern, 0, len(weighted)/2)
+		for i := 1; i < len(weighted); i += 2 {
+			pats = append(pats, weighted[i].(core.Pattern))
+		}
+		if len(pats) == 1 {
+			return pats[0]
+		}
+		return core.FastCat(pats...)
+	}
+	return core.TimeCatWeighted(weighted...)
+}
+
+// splitWeight separates a trailing @n weight from a token. "bd@3" yields
+// ("bd", 3). A token with no weight yields a weight of 1, so callers can treat
+// every step uniformly.
+func splitWeight(tok string) (string, float64) {
+	i := indexAtDepth0(tok, "@")
+	if i <= 0 {
+		return tok, 1
+	}
+	w, err := strconv.ParseFloat(strings.TrimSpace(tok[i+1:]), 64)
+	if err != nil || w <= 0 {
+		return tok[:i], 1
+	}
+	return tok[:i], w
 }
 
 func splitMiniTokens(s string) []string {
@@ -438,13 +475,11 @@ func parseToken(tok string) core.Pattern {
 			// Fast replicate: repeat event reps times via Ply? For mini, ! is weight-like
 			return pat.Ply(reps)
 		}
-		// Handle weight @ or _: "bd@2" means weight 2 (elongate) via TimeCatWeighted
-		if containsAtDepth0(tok, "@_") {
-			sep := byte('@')
-			if containsAtDepth0(tok, "_") {
-				sep = '_'
-			}
-			parts := splitAtDepth0(tok, sep)
+		// Handle weight alias _: "bd_2" means weight 2 (elongate). @ is
+		// handled by parseSequence instead, since only there are the relative
+		// durations of sibling steps known.
+		if containsAtDepth0(tok, "_") {
+			parts := splitAtDepth0(tok, '_')
 			base := parts[0]
 			weightStr := parts[1]
 			pat := parseToken(base)

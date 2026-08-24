@@ -250,7 +250,7 @@ haps := pat.Query(core.NewState(span))
 | `~` | Rest / silence | `mini.Mini("bd ~ sd")` |
 | `*n` / `/n` | Speed up / slow down token | `bd*2`, `bd/2` |
 | `(p,s)` / `(p,s,r)` | Euclidean Bjorklund | `bd(3,8)`, `bd(3,8,2)` |
-| `@n` | Parsed, but currently **no effect** on timing — see [limitations](docs/tutorial/08-limitations.md) | `bd@2` |
+| `@n` | Elongate / weight | `bd@2` |
 | `!` / `!n` | Repeats within the token's own slot (not four equal steps) | `bd!2` |
 | `?` / `?n` | Degrade chance | `bd?0.5` |
 | `[a b]` | Subsequence (group) | `[bd sd]*2` |

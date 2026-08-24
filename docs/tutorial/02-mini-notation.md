@@ -25,6 +25,17 @@ A bar is divided evenly between whatever you write.
 
 More items means each is shorter. The bar is always full.
 
+### Weight — `@`
+
+```
+"bd@3 sd"        bd for three quarters, sd for the last quarter
+```
+
+`@n` gives a step `n` times the share of the bar it would otherwise get,
+taken from its siblings — the other steps in the same sequence still split
+whatever is left evenly. `"bd@3 sd"` divides the bar 3:1, so `bd` holds from
+0 to 3/4 and `sd` holds from 3/4 to 1. A step with no `@` counts as weight 1.
+
 ### Rest — `~`
 
 ```
@@ -133,25 +144,22 @@ The sequences have different lengths and drift against each other.
 "0 .. 3"         0 1 2 3 as four steps
 ```
 
-## Two differences from Strudel
+## One difference from Strudel
 
-If you are coming from Strudel or Tidal, these two do not behave as you expect.
-
-**`@` (elongate) currently has no effect.** `"bd@3 sd"` produces exactly the
-same timing as `"bd sd"`. To hold a note for a whole bar use `<>`; to weight a
-step, write it out (`"bd bd bd sd"`).
+If you are coming from Strudel or Tidal, this does not behave as you expect.
 
 **`!` subdivides in place rather than adding steps.** `"bd!3 sd"` puts three
 kicks inside the *first half* of the bar (at 0, 1/6, 1/3), where Strudel would
 give four equal quarters. If you want four equal steps, write `"bd bd bd sd"`.
 
-Both are listed in [Limitations](08-limitations.md).
+This is listed in [Limitations](08-limitations.md).
 
 ## Reference
 
 | Syntax | Meaning | Example |
 |--------|---------|---------|
 | ` ` | sequence | `bd sd` |
+| `@n` | weight (share of the bar) | `bd@3 sd` |
 | `~` | rest | `bd ~ sd ~` |
 | `*n` | repeat n times | `bd*4` |
 | `/n` | play every n cycles | `bd/2` |
