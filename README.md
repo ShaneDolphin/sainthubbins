@@ -1,0 +1,269 @@
+# Saint Hubbins — Go-Native Live Coding Pattern Engine
+
+Saint Hubbins is a Go-native environment for algorithmic music and live coding. Patterns are pure functions of time — `Pattern` values queried over rational time spans — that emit sound, MIDI, and visual events. The system includes a pattern engine, a compact text notation, a control vocabulary, offline audio rendering, and a live console served from a single Go binary.
+
+Patterns are first-class values. You compose them, transform them in time, and layer them. The engine evaluates a pattern for any time window and returns the active events (`haps`) with precise timing, so playback and rendering stay deterministic. These go to eleven.
+
+---
+
+## Features
+
+- **Pattern engine** — exact rational timing (`Fraction`), `TimeSpan`, `Hap`, `State`, and a `Pattern` type with functor / applicative / monadic composition
+- **Mini notation** — compact string language for rhythms (`"bd sd ~"`, `"[bd sd]*2"`, `"c3 e3 g3"`, `"bd(3,8)"`)
+- **295+ controls** — sound selection, pitch, filters, envelopes, spatialization, buses, and synthesis params, all composable via `Set`
+- **Transformation core** — time (`Slow`/`Fast`/`Early`/`Late`/`Compress`/`Zoom`), structure (`Stack`/`FastCat`/`SlowCat`/`Arrange`/`Palindrome`/`Jux`), Euclidean (`Euclid`/`Bjorklund`/`Struct`), repetition and slicing (`Ply`/`Chop`/`Striate`/`Segment`), conditional (`When`/`Every`/`Sometimes`/`Degrade`), and alignment variants
+- **Live console** — `POST /api/evaluate` and `POST /api/pianoroll` plus a single-page editor, served by `go run ./cmd/saint-hubbins serve`
+- **Offline audio** — mono `float32` rendering to WAV with gain, filter, and note-to-frequency mapping
+- **Music theory** — scales, chords, voicings, and transposition
+- **Visuals** — pianoroll, spiral, and pitch-wheel helpers — Stonehenge edition
+- **WASM bridge** — `GOOS=js GOARCH=wasm` target exposing the engine to the browser via `saintHubbins.queryPattern` in `saint-hubbins.wasm`
+- **I/O abstractions** — MIDI, OSC, Serial, MQTT, Gamepad, motion sensing, and related backends
+
+---
+
+## Requirements
+
+- Go 1.25 or newer
+- No Node.js, no external audio server required for build or offline render
+
+---
+
+## Installation
+
+```bash
+git clone <this-repo>
+cd Go
+go mod download
+
+# build the CLI
+go build -o saint-hubbins ./cmd/saint-hubbins
+# also available as hubbins (symlink)
+ln -s saint-hubbins hubbins
+
+# or run directly
+go run ./cmd/saint-hubbins query
+```
+
+### Makefile helpers
+
+```bash
+make test        # go test ./... -race -count=1
+make lint        # go vet ./...
+make wasm        # GOOS=js GOARCH=wasm build -> web/static/saint-hubbins.wasm
+make serve       # go run ./cmd/saint-hubbins serve
+make fmt         # gofmt -w .
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Synthetic query — stack two sound events over 2 cycles
+go run ./cmd/saint-hubbins query
+
+# 2. Evaluate a pattern string (mini notation with controls)
+go run ./cmd/saint-hubbins eval "s(\"bd sd\")"
+
+# 3. Start the live console server (http://localhost:8080)
+go run ./cmd/saint-hubbins serve
+# or on a custom address:
+go run ./cmd/saint-hubbins serve :3000
+
+# 4. Render 4 cycles of a pattern to a WAV file
+go run ./cmd/saint-hubbins render out.wav "s(\"bd sd hh cp\")"
+```
+
+Open `http://localhost:8080` after `serve` — the page contains an editor with **Evaluate** and **Hush** that POST to the server.
+
+---
+
+## CLI Reference
+
+The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Four subcommands:
+
+| Command | Usage | Effect |
+|---|---|---|
+| `query` | `saint-hubbins query` | Demo: `Stack(s("bd"), s("sd"))` queried over 0..2 cycles, pretty-printed JSON with `whole`, `part`, `value` |
+| `eval` | `saint-hubbins eval <code>` | Parses `<code>` as mini or control expression, queries 0..1 cycle, prints JSON |
+| `serve` | `saint-hubbins serve [addr]` | Starts the console server. Default `addr` is `:8080`. |
+| `render` | `saint-hubbins render <out.wav> <code>` | Renders `<code>` for 4 cycles at 48 kHz and writes a 16-bit mono WAV |
+
+All commands register the mini string parser before evaluation, so quoted mini like `s("bd sd")` and bare mini like `"bd sd"` both work.
+
+Examples:
+
+```bash
+saint-hubbins eval 's("bd ~ sd cp")'
+saint-hubbins eval 'note("c3 e3 g3").s("piano")'
+saint-hubbins render /tmp/test.wav 's("bd(3,8)")'
+```
+
+---
+
+## HTTP API
+
+When `serve` is running, the server exposes:
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| `GET` | `/` | — | Console HTML (editor + JS `fetch` to `/api/evaluate`) |
+| `GET` | `/health` | — | `ok` |
+| `POST` | `/api/evaluate` | `{"code":"s(\"bd sd\")"}` | `{"haps":[{"whole":"0/1 → 1/2","part":"0/1 → 1/2","value":{"s":"bd"}}, ...]}` |
+| `POST` | `/api/pianoroll` | `{"code":"..."}` | `{"haps":[... with time/duration ...]}` queried over 0..2 cycles |
+| `GET` | `/static/*` | — | Files under `web/static/` (including `saint-hubbins.wasm` and `wasm_exec.js`) |
+
+CORS headers (`Access-Control-Allow-Origin: *`) are set for API routes; `OPTIONS` preflight returns 204.
+
+```bash
+curl -s -X POST http://localhost:8080/api/evaluate \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"s(\"bd sd\")"}' | jq .
+
+curl -s -X POST http://localhost:8080/api/pianoroll \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"bd sd cp"}' | jq .
+```
+
+---
+
+## Web Console
+
+- `web/server.go` — `Server` with `Handler()` and `Start()`, template in `web/templates/console.html`
+- `web/static/` — `saint-hubbins.wasm` + `wasm_exec.js` produced by `make wasm`
+- `cmd/saint-hubbins-wasm` — `//go:build js && wasm` entry exporting `saintHubbins.queryPattern(code)` and `version` on `js.Global()`
+
+Embed the server in another Go program:
+
+```go
+import "codeberg.org/uzu/saint-hubbins/web"
+
+srv := web.NewServer(":8080")
+log.Fatal(srv.Start())
+```
+
+---
+
+## Using the Engine as a Go Library
+
+Core packages live under `internal/` (`core`, `mini`, `transpiler`, `audio`, `draw`, `tonal`, etc.). They are idiomatic Go and have no runtime dependency on a browser.
+
+### Querying a pattern
+
+```go
+package main
+
+import (
+    "fmt"
+    "codeberg.org/uzu/saint-hubbins/internal/core"
+    "codeberg.org/uzu/saint-hubbins/internal/mini"
+)
+
+func main() {
+    mini.RegisterStringParser() // enable string → Pattern via mini
+
+    pat := core.Stack(core.S("bd"), core.S("sd"))
+    haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(2))
+    fmt.Println(len(haps), "haps")
+
+    pat2 := mini.Mini("bd ~ sd cp")
+    haps2 := pat2.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+    fmt.Printf("%+v\n", haps2[0].Value)
+
+    fast := pat2.FastF(core.FractionFromInt(2))
+    _ = fast
+
+    pat3 := core.S("bd").Set(core.Gain(0.8).Set(core.Pan(0.2)))
+    hv := pat3.FirstCycle()[0].Value.(map[string]any)
+    fmt.Println(hv["s"], hv["gain"], hv["pan"])
+}
+```
+
+### Time model
+
+```go
+a := core.FractionFromInt(1).Div(core.FractionFromInt(2)) // 1/2
+b := core.NewFraction(3, 4)                                 // 3/4
+span := core.NewTimeSpan(core.FractionFromInt(0), core.FractionFromInt(1))
+haps := pat.Query(core.NewState(span))
+```
+
+### Mini Notation
+
+`mini.Mini(string) Pattern` parses the compact language.
+
+| Syntax | Meaning | Example |
+|---|---|---|
+| `bd sd cp` | Sequence in one cycle | `mini.Mini("bd sd")` |
+| `~` | Rest / silence | `mini.Mini("bd ~ sd")` |
+| `*n` / `/n` | Speed up / slow down token | `bd*2`, `bd/2` |
+| `(p,s)` / `(p,s,r)` | Euclidean Bjorklund | `bd(3,8)`, `bd(3,8,2)` |
+| `@n` | Elongate / weight | `bd@2` |
+| `!` / `!n` | Replicate | `bd!2` |
+| `?` / `?n` | Degrade chance | `bd?0.5` |
+| `[a b]` | Subsequence (group) | `[bd sd]*2` |
+| `<a b>` | Alternate each cycle | `<bd sd>` |
+| `{a b, c d e}` | Polymeter (stack folded to `Stack` when steps unavailable) | `{a b, c d e}` |
+| `a \| b \| c` | Choose one per cycle | `a | b` |
+| `0 .. 4` | Range 0..4 inclusive | `0 .. 4` |
+| `bd:1` | Sample index via control `n` | `bd:3` → `s=bd n=3` |
+| `a,b` | Stack layers | `a,b` or `a , b` |
+| `// comment` | Comment ignored | `bd sd // kick-snare` |
+
+---
+
+## Audio
+
+```go
+import "codeberg.org/uzu/saint-hubbins/internal/audio"
+
+samples, err := audio.RenderPatternAudio(pat, 4, 48000)
+err = audio.WriteWAV("out.wav", samples, 48000)
+```
+
+---
+
+## Project Layout
+
+```
+Go/
+  cmd/saint-hubbins/        # native CLI + console server entry (alias hubbins)
+  cmd/saint-hubbins-wasm/   # //go:build js && wasm — browser bridge
+  web/
+    server.go         # Server.Handler(), /api/evaluate, /api/pianoroll
+    templates/console.html
+    static/           # saint-hubbins.wasm + wasm_exec.js (generated)
+  internal/
+    core/             # Fraction, TimeSpan, Hap, State, Pattern, controls, signals, scheduler
+    mini/             # mini.Mini, parser (pigeon)
+    transpiler/       # Transpile, EvaluateJS
+    audio/            # OfflineRenderer, RenderPatternAudio, WriteWAV
+    draw/             # Pianoroll, Spiral, pitch wheel, animation
+    tonal/            # Scale / Chord / Voicing / Transpose
+    session/          # live session (evaluation + scheduler)
+  tools/gen-controls/ # regenerates internal/core/controls_gen.go
+  go.mod              # module codeberg.org/uzu/saint-hubbins, go 1.25, github.com/dop251/goja
+  Makefile
+  LICENSE             # AGPL-3.0-or-later
+  ATTRIBUTION.md      # upstream credit
+```
+
+---
+
+## Development
+
+```bash
+go test ./... -race -count=1
+go vet ./...
+go test -tags goja ./...
+go run ./tools/gen-controls
+GOOS=js GOARCH=wasm go build -o web/static/saint-hubbins.wasm ./cmd/saint-hubbins-wasm
+```
+
+---
+
+## License
+
+AGPL-3.0-or-later. See `LICENSE`.
+
+Copyright (C) 2026 Saint Hubbins contributors.

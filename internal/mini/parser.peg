@@ -1,0 +1,180 @@
+{
+	package mini
+
+	import (
+		"strconv"
+		"strings"
+
+		"codeberg.org/uzu/strudel-go/internal/core"
+	)
+
+	func parseFloat(s string) (float64, error) {
+		return strconv.ParseFloat(s, 64)
+	}
+
+	func parseSampleN(s string) any {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return f
+		}
+		return s
+	}
+}
+
+// MiniFile is entry point — PEG structure mirrors krill.pegjs with full sample/weight/euclid handling
+MiniFile <- _ seq:Sequence _ (!EOF .)* {
+	return seq, nil
+}
+
+Sequence <- first:Element rest:(_ Element)* {
+	pats := []core.Pattern{first.(core.Pattern)}
+	if restSlice, ok := rest.([]interface{}); ok {
+		for _, v := range restSlice {
+			if arr, ok := v.([]interface{}); ok && len(arr) == 2 {
+				if pat, ok := arr[1].(core.Pattern); ok {
+					pats = append(pats, pat)
+				}
+			}
+		}
+	}
+	if len(pats) == 1 {
+		return pats[0], nil
+	}
+	return core.FastCat(pats...), nil
+}
+
+Element <- atom:Atom ops:(_ Operator)* {
+	pat := atom.(core.Pattern)
+	if opsSlice, ok := ops.([]interface{}); ok {
+		for _, v := range opsSlice {
+			if arr, ok := v.([]interface{}); ok && len(arr) == 2 {
+				if op, ok := arr[1].(string); ok {
+					if len(op) == 0 { continue }
+					switch op[0] {
+					case '*':
+						if val, err := parseFloat(op[1:]); err == nil {
+							pat = pat.FastF(core.FractionFromFloat(val))
+						}
+					case '/':
+						if val, err := parseFloat(op[1:]); err == nil {
+							pat = pat.SlowF(core.FractionFromFloat(val))
+						}
+					case '?':
+						prob := 0.5
+						if len(op) > 1 {
+							if val, err := parseFloat(op[1:]); err == nil { prob = val }
+						}
+						pat = pat.DegradeBy(prob)
+					case '(':
+						// Euclid "(pulses,steps)" or "(pulses,steps,rotation)"
+						inner := strings.Trim(op, "()")
+						parts := strings.Split(inner, ",")
+						if len(parts) >= 2 {
+							pulses, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+							steps, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+							rotation := 0
+							if len(parts) >= 3 {
+								rotation, _ = strconv.Atoi(strings.TrimSpace(parts[2]))
+							}
+							if rotation != 0 {
+								pat = pat.EuclidRot(pulses, steps, rotation)
+							} else {
+								pat = pat.Euclid(pulses, steps)
+							}
+						}
+					case '@', '_':
+						// Weight: "@2" or "_2" -> WithSteps weight
+						if val, err := parseFloat(op[1:]); err == nil && val != 0 {
+							w := val
+							pat = pat.WithSteps(func(f core.Fraction) core.Fraction { return f.Mul(core.FractionFromFloat(w)) })
+						}
+					case '!':
+						// Replicate: "!" or "!2" or "!!" (count !)
+						// op is "!" or "!2" or "!!" etc — count ! and parse number
+						reps := strings.Count(op, "!")
+						numStr := strings.Trim(op, "!")
+						if numStr != "" {
+							if v, err := strconv.Atoi(strings.TrimSpace(numStr)); err == nil {
+								reps = v
+							}
+						}
+						if reps <= 1 { reps = 2 }
+						pat = pat.Ply(reps)
+					}
+				}
+			}
+		}
+	}
+	return pat, nil
+}
+
+Atom <- r:Rest { return core.Silence(), nil }
+      / s:Sample { return s, nil }
+      / n:Number { return core.Pure(string(n.(string))), nil }
+      / w:Word { return core.Pure(string(w.(string))), nil }
+      / "[" _ seq:Sequence _ "]" { return seq, nil }
+      / "<" _ seq:Sequence _ ">" { return core.SlowCat(seq.(core.Pattern)), nil }
+      / "{" _ inner:PolymeterInner _ "}" suffix:PolymeterSuffix? {
+			seqs := inner.([]core.Pattern)
+			var base core.Pattern
+			if len(seqs)==1 { base = seqs[0] } else { base = core.Stack(seqs...) }
+			if suffix != nil {
+				if s, ok := suffix.(string); ok && len(s) > 0 {
+					switch s[0] {
+					case '*':
+						if val, err := parseFloat(s[1:]); err == nil {
+							base = base.FastF(core.FractionFromFloat(val))
+						}
+					case '/':
+						if val, err := parseFloat(s[1:]); err == nil {
+							base = base.SlowF(core.FractionFromFloat(val))
+						}
+					case '%':
+						// steps-per-cycle: for now keep base (Polymeter already stacked)
+						// Could apply WithSteps but keep as base to avoid empty
+					}
+				}
+			}
+			return base, nil
+		}
+
+// Sample handles "bd:1" -> Pure(map[s:bd n:1]) with int/float/string fallback
+Sample <- base:Word _ ":" _ n:SampleN {
+	s := string(base.(string))
+	nStr := string(n.(string))
+	return core.Pure(map[string]any{"s": s, "n": parseSampleN(nStr)}), nil
+}
+
+SampleN <- Number / Word
+
+PolymeterInner <- first:Sequence rest:(_ "," _ Sequence)* {
+	pats := []core.Pattern{first.(core.Pattern)}
+	if restSlice, ok := rest.([]interface{}); ok {
+		for _, v := range restSlice {
+			if arr, ok := v.([]interface{}); ok && len(arr)==4 {
+				if pat, ok := arr[3].(core.Pattern); ok { pats = append(pats, pat) }
+			}
+		}
+	}
+	return pats, nil
+}
+
+PolymeterSuffix <- "%" _ n:Number { return "%" + n.(string), nil }
+                / "*" _ n:Number { return "*" + n.(string), nil }
+                / "/" _ n:Number { return "/" + n.(string), nil }
+
+Word <- [a-zA-Z0-9#_^.~-]+ { return string(c.text), nil }
+Number <- [0-9]+ ("." [0-9]+)? { return string(c.text), nil }
+Rest <- "~" / "-" / "_" { return string(c.text), nil }
+Operator <- EuclidOp / WeightOp / FastOp / SlowOp / DegradeOp / ReplicateOp
+FastOp <- "*" _ n:Number { return "*" + n.(string), nil }
+SlowOp <- "/" _ n:Number { return "/" + n.(string), nil }
+EuclidOp <- "(" _ pulses:Number _ "," _ steps:Number _ ("," _ rotation:Number _)? ")" { return string(c.text), nil }
+WeightOp <- ("@" / "_") _ n:Number { return string(c.text), nil }
+DegradeOp <- "?" _ n:Number? { return string(c.text), nil }
+ReplicateOp <- "!" _ n:Number? { return string(c.text), nil }
+              / "!" "!"* { return string(c.text), nil }
+_ <- [ \t\n\r]* { return "", nil }
+EOF <- !. { return "", nil }
