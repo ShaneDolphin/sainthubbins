@@ -71,109 +71,136 @@ func parseSequence(input string) core.Pattern {
 	if len(tokens) == 0 {
 		return core.Silence()
 	}
-	// Handle range operator "a .. b" at sequence level (spaced "..")
-	for i := 0; i < len(tokens); i++ {
-		if tokens[i] == ".." && i > 0 && i+1 < len(tokens) {
-			leftStr := tokens[i-1]
-			rightStr := tokens[i+1]
-			if l, err1 := strconv.Atoi(leftStr); err1 == nil {
-				if r, err2 := strconv.Atoi(rightStr); err2 == nil {
-					var pats []core.Pattern
-					if l <= r {
-						for v := l; v <= r; v++ {
-							pats = append(pats, core.Pure(v))
-						}
-					} else {
-						for v := l; v >= r; v-- {
-							pats = append(pats, core.Pure(v))
-						}
-					}
-					rangePat := core.FastCat(pats...)
-					// Tokens surrounding the range are ordinary sequence
-					// steps too — they need the same splitStepBase pass as
-					// every other step, or a "!"/"@" suffix falls straight
-					// through parseToken's fallback and leaks into the
-					// value instead of expanding (!) or being stripped (@).
-					// This branch doesn't support weighted timing against a
-					// range (there's no TimeCatWeighted call here), so the
-					// weight is discarded same as it always was for this
-					// path — only the leaked suffix text is new breakage.
-					newPats := make([]core.Pattern, 0, len(tokens)-2)
-					for j := 0; j < i-1; j++ {
-						base, reps, _ := splitStepBase(tokens[j])
-						pat := parseToken(base)
-						for k := 0; k < reps; k++ {
-							newPats = append(newPats, pat)
-						}
-					}
-					newPats = append(newPats, rangePat)
-					for j := i + 2; j < len(tokens); j++ {
-						base, reps, _ := splitStepBase(tokens[j])
-						pat := parseToken(base)
-						for k := 0; k < reps; k++ {
-							newPats = append(newPats, pat)
-						}
-					}
-					if len(newPats) == 0 {
-						return core.Silence()
-					}
-					if len(newPats) == 1 {
-						return newPats[0]
-					}
-					return core.FastCat(newPats...)
-				}
-			}
-		}
-	}
 	// Depth-0 "," and "|" are handled at the top of this function, before
 	// tokenizing, so any isolated separator reaching this point is a degenerate
-	// input such as "," on its own; the loop below skips it and falls through
-	// to Silence.
+	// input such as "," on its own; buildSteps skips it and falls through to
+	// Silence below.
 	//
 	// A single real token used to shortcut straight to parseToken(tokens[0]),
 	// bypassing weight stripping — "bd@3" would then reach parseToken still
 	// carrying its "@3" suffix, and since parseToken no longer understands
 	// "@" the raw suffix leaked into the value. Every token, including a lone
-	// one, must go through splitWeight first.
-	//
-	// Collect steps with their weights. When every weight is 1 this is exactly
-	// FastCat; otherwise the steps divide the cycle in proportion.
-	var (
-		weighted    []any
-		weightedAny bool
-	)
-	for _, tok := range tokens {
-		if tok == ".." || tok == "|" || tok == "," {
-			continue
-		}
-		base, reps, w := splitStepBase(tok)
-		if w != 1 {
-			weightedAny = true
-		}
-		// A replicated step becomes that many sibling steps, so "bd!3 sd" is
-		// four equal quarters rather than three kicks crammed into one slot.
-		for i := 0; i < reps; i++ {
-			weighted = append(weighted, w, parseToken(base))
-		}
-	}
-	if len(weighted) == 0 {
+	// one, must go through buildSteps (and so splitStepBase) first.
+	pats, weights, hadRange := buildSteps(tokens)
+	if len(pats) == 0 {
 		return core.Silence()
 	}
-	if len(weighted) == 2 {
+	if len(pats) == 1 {
 		// Exactly one step: there are no siblings for its weight to be
-		// relative to, so the weight is discarded — the value still needs
-		// splitWeight to strip a trailing "@n", but the timing already
-		// spans the full cycle without TimeCatWeighted's involvement.
-		return weighted[1].(core.Pattern)
+		// relative to, so the weight is discarded — the value still went
+		// through splitWeight to strip a trailing "@n", but the timing
+		// already spans the full cycle without TimeCatWeighted's
+		// involvement.
+		return pats[0]
 	}
-	if !weightedAny {
-		pats := make([]core.Pattern, 0, len(weighted)/2)
-		for i := 1; i < len(weighted); i += 2 {
-			pats = append(pats, weighted[i].(core.Pattern))
-		}
+	if hadRange {
+		// This branch doesn't support weighted timing against a range
+		// (there's no sibling duration for its weight to be relative to
+		// across a value/value transition), so weights are discarded same
+		// as they always were for this path — only a leaked suffix in the
+		// value itself would be new breakage, and buildSteps already
+		// stripped that.
 		return core.FastCat(pats...)
 	}
+	weightedAny := false
+	for _, w := range weights {
+		if w != 1 {
+			weightedAny = true
+			break
+		}
+	}
+	if !weightedAny {
+		return core.FastCat(pats...)
+	}
+	weighted := make([]any, 0, len(pats)*2)
+	for i, p := range pats {
+		weighted = append(weighted, weights[i], p)
+	}
 	return core.TimeCatWeighted(weighted...)
+}
+
+// buildSteps resolves a token list (as produced by splitMiniTokens) into the
+// sequence of steps it names. It is the one place that combines the three
+// things every list-building call site needs — parseSequence's main loop,
+// the "<...>" alternation branch and the "{...}" polymeter branch — so a fix
+// to any of them only has to happen once:
+//
+//   - ".." range expansion: "a .. b" between two integer tokens expands into
+//     one Pure(v) step per value in the range, inclusive, in the direction
+//     from a to b. Only the first such range in the list is expanded — this
+//     matches the pre-existing single-range behavior of this grammar.
+//   - "!" replicate: splitStepBase's reps count turns one token into that
+//     many sibling steps.
+//   - "@" weight: splitStepBase's weight is returned alongside each step so
+//     a caller that divides the cycle by relative duration (parseSequence)
+//     can use it; a caller for which a step is always exactly one slot
+//     ("<...>", "{...}") can simply ignore the weights slice.
+//
+// A range step always carries weight 1, and hadRange reports whether a
+// range was found — parseSequence uses that to fall back to plain
+// concatenation for the whole list, since this grammar has never supported
+// weighted timing against a range.
+func buildSteps(tokens []string) (pats []core.Pattern, weights []float64, hadRange bool) {
+	appendToken := func(tok string) {
+		base, reps, w := splitStepBase(tok)
+		pat := parseToken(base)
+		for k := 0; k < reps; k++ {
+			pats = append(pats, pat)
+			weights = append(weights, w)
+		}
+	}
+
+	rangeAt := -1
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i] != ".." || i == 0 || i+1 >= len(tokens) {
+			continue
+		}
+		if _, err1 := strconv.Atoi(tokens[i-1]); err1 != nil {
+			continue
+		}
+		if _, err2 := strconv.Atoi(tokens[i+1]); err2 != nil {
+			continue
+		}
+		rangeAt = i
+		break
+	}
+
+	if rangeAt < 0 {
+		for _, tok := range tokens {
+			if tok == ".." || tok == "|" || tok == "," {
+				continue
+			}
+			appendToken(tok)
+		}
+		return pats, weights, false
+	}
+
+	for j := 0; j < rangeAt-1; j++ {
+		if t := tokens[j]; t == ".." || t == "|" || t == "," {
+			continue
+		}
+		appendToken(tokens[j])
+	}
+	l, _ := strconv.Atoi(tokens[rangeAt-1])
+	r, _ := strconv.Atoi(tokens[rangeAt+1])
+	if l <= r {
+		for v := l; v <= r; v++ {
+			pats = append(pats, core.Pure(v))
+			weights = append(weights, 1)
+		}
+	} else {
+		for v := l; v >= r; v-- {
+			pats = append(pats, core.Pure(v))
+			weights = append(weights, 1)
+		}
+	}
+	for j := rangeAt + 2; j < len(tokens); j++ {
+		if t := tokens[j]; t == ".." || t == "|" || t == "," {
+			continue
+		}
+		appendToken(tokens[j])
+	}
+	return pats, weights, true
 }
 
 // splitWeight separates a trailing @n weight from a token. "bd@3" yields
@@ -392,22 +419,17 @@ func parseToken(tok string) core.Pattern {
 				}
 				// Each token here is one alternative occupying exactly one
 				// cycle, the same as a step in a sequence — so it needs the
-				// same splitStepBase treatment a sequence step gets, not a
+				// same buildSteps treatment a sequence step list gets, not a
 				// bare parseToken call. "!" expands into repeated
 				// alternatives ("<bd!3 sd>" is bd, bd, bd, sd across four
+				// cycles); ".." expands a range the same as it does at
+				// sequence level ("<0 .. 3>" is 0, 1, 2, 3 across four
 				// cycles); "@" has nothing to be relative to inside a
 				// one-cycle slot, so its weight is simply discarded — but
 				// both suffixes still have to be stripped from the value,
 				// or parseToken's fallback leaks the raw "!3"/"@3" text into
 				// the hap.
-				var sub []core.Pattern
-				for _, t := range toks {
-					base, reps, _ := splitStepBase(t)
-					pat := parseToken(base)
-					for i := 0; i < reps; i++ {
-						sub = append(sub, pat)
-					}
-				}
+				sub, _, _ := buildSteps(toks)
 				pats = append(pats, core.SlowCat(sub...))
 			}
 			switch len(pats) {
@@ -473,26 +495,20 @@ func parseToken(tok string) core.Pattern {
 
 			// Each comma-separated layer is a list of steps. Each token here
 			// is one slot in that list, the same as a step in a sequence, so
-			// it needs splitStepBase's treatment: "!" expands into repeated
-			// sibling steps, and "@" is stripped from the value (there is no
-			// sibling duration for its weight to be relative to inside a
+			// it needs buildSteps's treatment: "!" expands into repeated
+			// sibling steps, ".." expands a range the same as it does at
+			// sequence level, and "@" is stripped from the value (there is
+			// no sibling duration for its weight to be relative to inside a
 			// rate-based list, so it is discarded like it is for "<...>").
 			// Calling parseToken directly, as on a bare token, would leak a
-			// raw "!2"/"@2" suffix straight into the value instead.
+			// raw "!2"/"@2"/".." suffix straight into the value instead.
 			var layers [][]core.Pattern
 			for _, part := range splitAtDepth0(inner, ',') {
 				toks := splitMiniTokens(strings.TrimSpace(part))
 				if len(toks) == 0 {
 					continue
 				}
-				var steps []core.Pattern
-				for _, s := range toks {
-					base, reps, _ := splitStepBase(s)
-					pat := parseToken(base)
-					for i := 0; i < reps; i++ {
-						steps = append(steps, pat)
-					}
-				}
+				steps, _, _ := buildSteps(toks)
 				layers = append(layers, steps)
 			}
 			if len(layers) == 0 {
