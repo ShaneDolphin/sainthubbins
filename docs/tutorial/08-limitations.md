@@ -47,12 +47,6 @@ The engine is in `internal/`, which Go only allows the same module to import.
 A song is a new package beside `examples/`. You cannot `go get` Saint Hubbins
 into a separate project.
 
-## Mini-notation differences from Strudel
-
-| Syntax | Expected | Actual here |
-|--------|----------|-------------|
-| `{a b, c d e}%4` | four steps per cycle | **no effect** — the suffix is ignored |
-
 ## `Struct` needs Go booleans
 
 ```go

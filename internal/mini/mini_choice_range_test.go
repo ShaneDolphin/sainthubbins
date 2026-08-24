@@ -80,15 +80,19 @@ func TestMiniChoose(t *testing.T) {
 }
 
 func TestMiniPolymeterCurly(t *testing.T) {
+	// True polymeter: steps-per-cycle comes from the first layer ("a b" has
+	// 2 steps), so both layers play 2 steps per cycle — 2 + 2 = 4 haps, not
+	// the 2 + 3 = 5 a naive stack-of-sequences would give.
 	p := Mini("{a b, c d e}")
 	haps := p.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
-	if len(haps) != 5 {
-		t.Fatalf("{a b, c d e} expected 5 got %d %v", len(haps), haps)
+	if len(haps) != 4 {
+		t.Fatalf("{a b, c d e} expected 4 got %d %v", len(haps), haps)
 	}
+	// *2 doubles the event rate of the 4-hap/cycle polymeter: 8, not 10.
 	p2 := Mini("{a b, c d e}*2")
 	haps2 := p2.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
-	if len(haps2) != 10 {
-		t.Fatalf("{a b, c d e}*2 expected 10 got %d", len(haps2))
+	if len(haps2) != 8 {
+		t.Fatalf("{a b, c d e}*2 expected 8 got %d", len(haps2))
 	}
 }
 

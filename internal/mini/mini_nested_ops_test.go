@@ -155,7 +155,7 @@ func TestMiniDocumentedSyntax(t *testing.T) {
 		{"<bd sd>", 1},
 		{"bd!3 sd", 4},
 		{"bd@3 sd", 2},
-		{"{bd sd, hh hh hh}", 5},
+		{"{bd sd, hh hh hh}", 4},
 		{"[bd*4, hh*8]", 12},
 		{"c3 e3 g3", 3},
 		{"bd:1 sd:2", 2},

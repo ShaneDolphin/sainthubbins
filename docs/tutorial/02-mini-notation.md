@@ -144,10 +144,39 @@ The fastest way to stop a hat pattern sounding mechanical.
 ### Polymeter — `{ }`
 
 ```
-"{bd sd, hh hh hh}"    a 2-step and a 3-step cycle running together
+"{bd sd, hh hh hh}"    two layers, both playing 2 steps per cycle
 ```
 
-The sequences have different lengths and drift against each other.
+A polymeter is not a stack of independent sequences. Every layer plays the
+*same number of steps per cycle* — the steps-per-cycle rate — and each layer
+walks through its own list of elements at that rate, wrapping around when it
+runs out. Without an explicit `%n`, the rate comes from the first layer's
+length.
+
+Here the first layer, `bd sd`, has 2 steps, so both layers play 2 steps per
+cycle: 2 + 2 = 4 events per cycle, not 2 + 3 = 5. The second layer's own list
+has 3 elements, which does not divide evenly into 2, so it does not just
+repeat its first 2 elements forever — it keeps advancing through its
+3-element list at 2 steps per cycle and drifts against the first layer. Every
+`hh` sounds the same, so that drift is silent in this particular example;
+swap in distinct values and it becomes audible:
+
+```
+"{bd sd, a b c}"
+
+cycle 0: a b
+cycle 1: c a   (wrapped back to the start mid-list)
+cycle 2: b c
+```
+
+Give it 6 cycles and the two layers realign, because `lcm(2, 3) = 6`.
+
+Add `%n` to set the steps-per-cycle rate explicitly instead of taking it from
+the first layer:
+
+```
+"{bd sd, hh hh hh}%4"    4 steps per cycle in both layers (8 events/cycle)
+```
 
 ### Number range — `..`
 
@@ -173,7 +202,8 @@ The sequences have different lengths and drift against each other.
 | `:n` | sample index | `bd:1` |
 | `\|` | random choice | `bd\|sd` |
 | `?` | random drop | `hh*16?` |
-| `{ }` | polymeter | `{bd sd, hh hh hh}` |
+| `{ }` | polymeter (steps/cycle from the first layer) | `{bd sd, hh hh hh}` |
+| `{ }%n` | polymeter with an explicit steps-per-cycle rate | `{bd sd, hh hh hh}%4` |
 | `..` | number range | `0 .. 3` |
 
 ## What mini-notation cannot do

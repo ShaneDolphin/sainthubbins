@@ -466,53 +466,82 @@ func parseToken(tok string) core.Pattern {
 	}
 	// Handle curly polymeter "{a b, c d e}" and "{a b, c d e}%3" / "{a b, c d e}*3"
 	if len(tok) >= 2 && tok[0] == '{' {
-		// Find closing }
 		closeIdx := strings.LastIndex(tok, "}")
 		if closeIdx > 0 {
 			inner := tok[1:closeIdx]
-			suffix := tok[closeIdx+1:]
-			// inner is comma-separated sequences
-			seqStrs := strings.Split(inner, ",")
-			seqPats := make([]core.Pattern, 0, len(seqStrs))
-			for _, s := range seqStrs {
-				s = strings.TrimSpace(s)
-				if s == "" {
+			suffix := strings.TrimSpace(tok[closeIdx+1:])
+
+			// Each comma-separated layer is a list of steps. Each token here
+			// is one slot in that list, the same as a step in a sequence, so
+			// it needs splitStepBase's treatment: "!" expands into repeated
+			// sibling steps, and "@" is stripped from the value (there is no
+			// sibling duration for its weight to be relative to inside a
+			// rate-based list, so it is discarded like it is for "<...>").
+			// Calling parseToken directly, as on a bare token, would leak a
+			// raw "!2"/"@2" suffix straight into the value instead.
+			var layers [][]core.Pattern
+			for _, part := range splitAtDepth0(inner, ',') {
+				toks := splitMiniTokens(strings.TrimSpace(part))
+				if len(toks) == 0 {
 					continue
 				}
-				seqPats = append(seqPats, Mini(s))
-			}
-			var base core.Pattern
-			if len(seqPats) == 0 {
-				base = core.Silence()
-			} else if len(seqPats) == 1 {
-				base = seqPats[0]
-			} else {
-				// Polymeter: stack with steps alignment via Polymeter
-				// Polymeter requires Steps; FastCat has nil Steps so falls back to Stack
-				allPats := seqPats
-				base = core.Polymeter(allPats...)
-				// Fallback to Stack if Polymeter returned Silence due to missing Steps
-				if len(base.FirstCycle()) == 0 {
-					base = core.Stack(seqPats...)
+				var steps []core.Pattern
+				for _, s := range toks {
+					base, reps, _ := splitStepBase(s)
+					pat := parseToken(base)
+					for i := 0; i < reps; i++ {
+						steps = append(steps, pat)
+					}
 				}
+				layers = append(layers, steps)
 			}
-			// Handle suffix: %n (steps-per-cycle), *n (fast), /n (slow)
-			suffix = strings.TrimSpace(suffix)
-			if suffix != "" {
-				if strings.HasPrefix(suffix, "%") {
-					if v, err := strconv.Atoi(strings.TrimSpace(suffix[1:])); err == nil && v > 0 {
-						// steps-per-cycle: repeat to lcm? For "%3", JS expects [a b a, c d e] style — approximate via FastCat repeated?
-						// Simplified: Fast by factor len(seqPats)?? Use Polymeter with explicit steps: not perfect, but ensure non-empty
-						return base
+			if len(layers) == 0 {
+				return core.Silence()
+			}
+
+			// Steps per cycle: %n if given, otherwise the first layer's length.
+			// This is what makes it a polymeter — every layer runs at the same
+			// rate, and a layer whose length does not divide that rate lands on
+			// different elements each cycle.
+			stepsPerCycle := len(layers[0])
+			if strings.HasPrefix(suffix, "%") {
+				// %n's digits end where the next operator (*n or /n) begins —
+				// "%4*2" is steps-per-cycle 4 with a *2 still to apply, not a
+				// malformed "%4*2" that silently discards the *2.
+				rest := suffix[1:]
+				digits := 0
+				for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
+					digits++
+				}
+				if digits > 0 {
+					if v, err := strconv.Atoi(rest[:digits]); err == nil && v > 0 {
+						stepsPerCycle = v
 					}
-				} else if strings.HasPrefix(suffix, "*") {
-					if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
-						return base.FastF(core.FractionFromFloat(v))
-					}
-				} else if strings.HasPrefix(suffix, "/") {
-					if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
-						return base.SlowF(core.FractionFromFloat(v))
-					}
+				}
+				suffix = strings.TrimSpace(rest[digits:])
+			}
+
+			pats := make([]core.Pattern, 0, len(layers))
+			for _, steps := range layers {
+				// SlowCat gives one element per cycle; speeding it up by the
+				// step count gives that many elements per cycle, wrapping
+				// around the layer's own length.
+				pats = append(pats, core.SlowCat(steps...).
+					FastF(core.NewFraction(int64(stepsPerCycle), 1)))
+			}
+			base := pats[0]
+			if len(pats) > 1 {
+				base = core.Stack(pats...)
+			}
+
+			// A leftover *n or /n still applies on top.
+			if strings.HasPrefix(suffix, "*") {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
+					return base.FastF(core.FractionFromFloat(v))
+				}
+			} else if strings.HasPrefix(suffix, "/") {
+				if v, err := strconv.ParseFloat(strings.TrimSpace(suffix[1:]), 64); err == nil {
+					return base.SlowF(core.FractionFromFloat(v))
 				}
 			}
 			return base
