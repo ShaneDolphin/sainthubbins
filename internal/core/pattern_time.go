@@ -180,6 +180,11 @@ func (p Pattern) When(test any, fn func(Pattern) Pattern) Pattern {
 }
 
 // Every applies function every n cycles.
+//
+// SplitQueries is required: the decision depends on the cycle number, so a
+// query spanning several cycles must be broken into one query per cycle.
+// Without it a render of many cycles reads the cycle from the span start and
+// applies fn — or fails to — across the whole render.
 func (p Pattern) Every(n int, fn func(Pattern) Pattern) Pattern {
 	if n <= 0 {
 		return p
@@ -190,7 +195,7 @@ func (p Pattern) Every(n int, fn func(Pattern) Pattern) Pattern {
 			return fn(p).Query(state)
 		}
 		return p.Query(state)
-	}, p.Steps)
+	}, p.Steps).SplitQueries()
 }
 
 // Inside carries operation inside cycle.

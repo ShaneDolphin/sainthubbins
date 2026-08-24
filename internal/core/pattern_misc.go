@@ -146,13 +146,14 @@ func (p Pattern) LastOf(n int, fn func(Pattern) Pattern) Pattern {
 	if cycle < 0 {
 		cycle = 0
 	}
+	// SplitQueries for the same reason as Every: the decision is per cycle.
 	return NewPattern(func(state State) []Hap {
 		c := state.Span.Begin.Sam().Floor().Float64()
 		if int(c)%n == cycle {
 			return fn(p).Query(state)
 		}
 		return p.Query(state)
-	}, p.Steps)
+	}, p.Steps).SplitQueries()
 }
 
 // Apply etc (simplified as Fmap)
