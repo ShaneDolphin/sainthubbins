@@ -692,14 +692,17 @@ func SlowCat(pats ...Pattern) Pattern {
 			pat := pats[patIdx]
 			// Map cyc (which is within one cycle) to pat's cycle time
 			// Pat's time is relative to cycle
+			// The whole span is mapped relative to the start of this cycle.
+			// Using each instant's own Sam() collapses the span, because the
+			// end of cycle n has Sam() == n+1 and maps to zero.
+			base := cyc.Begin.Sam()
 			mappedSpan := cyc.WithTime(func(t Fraction) Fraction {
-				return t.Sub(t.Sam())
+				return t.Sub(base)
 			})
 			haps := pat.Query(state.SetSpan(mappedSpan))
 			// Map haps back
 			for _, h := range haps {
 				// Shift whole/part by cycle base
-				base := cyc.Begin.Sam()
 				shifted := h.WithSpan(func(s TimeSpan) TimeSpan {
 					return s.WithTime(func(t Fraction) Fraction { return t.Add(base) })
 				})

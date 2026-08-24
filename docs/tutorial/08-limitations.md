@@ -71,25 +71,6 @@ mask := core.FastCat(core.Pure(true), core.Pure(false), core.Pure(true), core.Pu
 core.Note(mini.Mini("c3")).Struct(mask)                   // 3 events
 ```
 
-## `SlowCat` drops patterns that do not fill a cycle
-
-`SlowCat` plays one argument per cycle. It works when each argument is a single
-event spanning the whole bar, and silently produces **nothing** when an argument
-has several events inside the bar:
-
-```go
-fill := core.S(mini.Mini("~ ~ ~ [sd sd sd sd]"))       // 4 events per bar
-core.SlowCat(core.Silence(), core.Silence(), core.Silence(), fill)
-// 0 events, on every cycle
-```
-
-Use `Every` or `LastOf` for arrangement instead:
-
-```go
-core.Silence().LastOf(4, func(core.Pattern) core.Pattern { return fill })
-// 4 events on cycles 3, 7, 11 …
-```
-
 ## `Add` does not transpose a wrapped pattern
 
 ```go

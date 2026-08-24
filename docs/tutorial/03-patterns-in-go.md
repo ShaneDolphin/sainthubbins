@@ -92,11 +92,11 @@ The alternatives sequence rather than layer:
 | `core.FastCat(a, b)` | a then b, both inside one bar |
 | `core.SlowCat(a, b)` | a for a whole bar, then b for the next |
 
-`SlowCat` is reliable only when each argument fills its whole cycle; patterns
-with several events inside a bar are dropped (see
-[Limitations](08-limitations.md)). For arrangement — a fill every fourth bar, a
-bar of silence — use `Every` and `LastOf` from
-[chapter 5](05-transformations.md) instead. That is what both dubstep templates
+`SlowCat` gives each argument a full cycle in turn, cycling through the list —
+useful for arranging distinct sections back to back. For an *occasional* event
+inside an otherwise steady pattern — a fill every fourth bar, a bar of
+silence — reach for `Every` and `LastOf` from
+[chapter 5](05-transformations.md) instead; that is what both dubstep templates
 do.
 
 ### `.FastF(shared.Tempo(128))`
