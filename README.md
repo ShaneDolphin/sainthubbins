@@ -56,7 +56,7 @@ The tutorial also covers [building a track from scratch](docs/tutorial/06-new-so
 - **Music theory** — scales, chords, voicings, and transposition
 - **Visuals** — pianoroll, spiral, and pitch-wheel helpers — Stonehenge edition
 - **WASM bridge** — `GOOS=js GOARCH=wasm` target exposing the engine to the browser via `saintHubbins.queryPattern` in `saint-hubbins.wasm`
-- **I/O abstractions** — MIDI, OSC, Serial, MQTT, Gamepad, motion sensing, and related backends
+- **I/O backends** — real: MIDI file export (`midi`) and real-time OSC to SuperDirt (`play`); still no-op stubs: Serial, MQTT, Gamepad, motion sensing
 
 ---
 

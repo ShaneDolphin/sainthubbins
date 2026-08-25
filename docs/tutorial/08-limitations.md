@@ -26,11 +26,19 @@ Every other control — `Pan`, `Room`, `Speed`, `Shape`, `CRush`, `Attack`,
 event data and ignored by the renderer. Setting them is not an error and does
 nothing you can hear.
 
-## There is no live audio
+## Live audio exists, but only through `play` and only with SuperDirt running
 
-Saint Hubbins renders to a file. There is no command that plays a pattern out of
-your speakers in real time, and the web console does not produce sound. The
-workflow is: change the file, run it, open the WAV.
+`saint-hubbins play <code> [host] [port] [secs]` streams a pattern to
+SuperDirt over OSC in real time — see [the README](../../README.md) for the
+command table. It needs SuperCollider with SuperDirt already running and
+listening on `127.0.0.1:57120`; if nothing is listening, `play` still exits
+cleanly (OSC over UDP has no receiver to fail against) but you will hear
+nothing.
+
+What's still true: the **web console** (`saint-hubbins serve`) does not
+produce sound by itself — it evaluates patterns and returns hap data, nothing
+more. `render` still renders to a file rather than speakers. The workflow for
+those two remains: change the file, run it, open the WAV.
 
 ## The console evaluates mini-notation only
 
