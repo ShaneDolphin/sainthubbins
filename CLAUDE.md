@@ -39,8 +39,15 @@ Four non-test sites in `internal/core` do this today, and all four call it corre
 Before adding or changing any combinator that touches the cycle number, run:
 
 ```
-grep -rn "state.Span.Begin.Sam()" internal/core/*.go | grep -v _test
+grep -rn "state.Span.Begin" internal/core/*.go | grep -v _test
 ```
+
+(`.Sam()` is the usual spelling of "give me the cycle number," but the
+broader `state.Span.Begin` search is deliberate — don't narrow it back to
+`.Sam()` on the grounds that the extra generality looks unused. The rule is
+"reads the cycle number off the query span," not "spells it `.Sam()`," and a
+future combinator could read `state.Span.Begin` some other way — `.Floor()`,
+direct arithmetic — without matching the narrower search.)
 
 Every hit must resolve to a `SplitQueries()` call (or its own `SpanCycles()`
 loop). If your new code shows up in that grep without one, that's the bug.
