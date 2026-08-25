@@ -39,15 +39,22 @@ Four non-test sites in `internal/core` do this today, and all four call it corre
 Before adding or changing any combinator that touches the cycle number, run:
 
 ```
-grep -rn "state.Span.Begin" internal/core/*.go | grep -v _test
+grep -rn "state\.Span\.Begin\|state\.Span\.End" internal/core/*.go | grep -v _test
 ```
 
-(`.Sam()` is the usual spelling of "give me the cycle number," but the
-broader `state.Span.Begin` search is deliberate — don't narrow it back to
-`.Sam()` on the grounds that the extra generality looks unused. The rule is
-"reads the cycle number off the query span," not "spells it `.Sam()`," and a
-future combinator could read `state.Span.Begin` some other way — `.Floor()`,
-direct arithmetic — without matching the narrower search.)
+(`.Sam()` on `Begin` is the usual spelling of "give me the cycle number," but
+the search above is deliberately broader in two directions, and don't narrow
+it back on the grounds that the extra generality looks unused. First: it
+matches `state.Span.Begin` generally, not just `.Sam()` — the rule is "reads
+the cycle number off the query span," not "spells it `.Sam()`," and a future
+combinator could read `Begin` via `.Floor()` or direct arithmetic without
+matching a `.Sam()`-only search. Second: `TimeSpan` has both `Begin` and
+`End` (`internal/core/timespan.go:10-13`), and a combinator that reads
+`state.Span.End` instead commits the identical bug — so the search covers
+both fields. Do not loosen this to a bare `state.Span.` search either: that
+matches 16 lines, most of them `SpanCycles()` calls — the compliant,
+self-splitting pattern — and a search that flags correct code teaches people
+to ignore it.)
 
 Every hit must resolve to a `SplitQueries()` call (or its own `SpanCycles()`
 loop). If your new code shows up in that grep without one, that's the bug.
@@ -67,10 +74,20 @@ as data and silently ignored by this renderer — don't "fix" a control that
 appears to do nothing to the WAV; check this list first.
 
 `docs/tutorial/08-limitations.md` describes this as "only five controls" —
-accurate for what a user writes in the tutorial (`Note`/`N`/`S`, `Gain`,
-`Cutoff`/`Lpf`), but the renderer also checks a `freq` field directly, ahead
-of the other five in priority. If you touch this code path, keep both
-descriptions honest rather than trusting either one blindly.
+that counts what a *user writes* in the tutorial (`Note`/`N`/`S`, `Gain`,
+`Cutoff`/`Lpf`) and is accurate for that audience, but it isn't a subset of
+the seven above by simple arithmetic: it merges `Cutoff`/`Lpf` into one
+control and omits `freq` entirely, which no tutorial example sets but the
+renderer does read. The two counts describe different things (fields a
+tutorial example sets vs. field names the renderer looks for) rather than
+one being a rounded-off version of the other.
+
+Nor is there a single priority order across all seven: `freq` (:90) only
+short-circuits the three *pitch* fields — `n` (:106), `note` (:120), and `s`
+(:132) are each guarded by `&& freq == 220.0`, so they're skipped once `freq`
+has set a real value. `gain` (:156) and `cutoff`/`lpf` (:176/:189) carry no
+such guard and are always read regardless of `freq`. If you touch this code
+path, keep both descriptions honest rather than trusting either one blindly.
 
 ## Module layout
 
