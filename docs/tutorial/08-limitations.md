@@ -15,14 +15,22 @@ event becomes one sine tone with a short attack and release.
 It is for checking that a rhythm and a set of pitches work. Judge your patterns
 on their timing, not their timbre.
 
-## Only five controls reach the audio
+## Only seven controls reach the audio
 
 Measured on this build. These change the WAV:
 
-`Note`, `N`, `S` (pitch), `Gain` (volume), `Cutoff` / `Lpf` (low-pass).
+`Freq`, `Note`, `N`, `S` (pitch), `Gain` (volume), `Cutoff` / `Lpf`
+(low-pass).
+
+`Freq` is the one to know about, because it is read *first* and it wins:
+give an event a `Freq` and the renderer takes that frequency and skips `N`,
+`Note` and `S` entirely. `Gain` and the filter are applied either way. The
+one exception is `Freq(220)`, which is indistinguishable from setting no
+`Freq` at all — 220 Hz is the renderer's default and it is the value the
+skip test looks for, so `core.Note("c3").Set(core.Freq(220))` renders as c3.
 
 Every other control — `Pan`, `Room`, `Speed`, `Shape`, `CRush`, `Attack`,
-`Release`, `Resonance`, `Hpf`, and the remaining 280-odd — is carried in the
+`Release`, `Resonance`, `Hpf`, and the 300-plus others — is carried in the
 event data and ignored by the renderer. Setting them is not an error and does
 nothing you can hear.
 

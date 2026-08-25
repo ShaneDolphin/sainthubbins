@@ -69,25 +69,40 @@ together.
 
 `internal/audio/webaudio.go`'s sine renderer reads exactly: `freq` (:90),
 `n` (:106), `note` (:120), `s` (:132), `gain` (:156), `cutoff` (:176),
-`lpf` (:189). The other ~290 controls in the vocabulary are carried through
-as data and silently ignored by this renderer — don't "fix" a control that
-appears to do nothing to the WAV; check this list first.
+`lpf` (:189). The vocabulary holds **339** distinct control names —
 
-`docs/tutorial/08-limitations.md` describes this as "only five controls" —
-that counts what a *user writes* in the tutorial (`Note`/`N`/`S`, `Gain`,
-`Cutoff`/`Lpf`) and is accurate for that audience, but it isn't a subset of
-the seven above by simple arithmetic: it merges `Cutoff`/`Lpf` into one
-control and omits `freq` entirely, which no tutorial example sets but the
-renderer does read. The two counts describe different things (fields a
-tutorial example sets vs. field names the renderer looks for) rather than
-one being a rounded-off version of the other.
+```
+grep -ohE 'createParam\("[^"]+"' internal/core/controls*.go | sort -u | wc -l
+```
 
-Nor is there a single priority order across all seven: `freq` (:90) only
+— and everything outside the seven above is carried through as data and
+silently ignored by this renderer. Don't "fix" a control that appears to do
+nothing to the WAV; check this list first.
+`docs/tutorial/08-limitations.md` states the same seven for users;
+`README.md` and `docs/tutorial/04-controls.md` quote the same 339, so adding
+controls moves all three numbers. Two counts you will meet and should not
+use: 477 exported `core.X` constructors (`Lpf`/`Cutoff` and `Sound`/`S` are
+separate identifiers for one control), and the 295 at
+`internal/core/controls.go:3` and `:79`, which is the *upstream JS* param
+count and is stale.
+
+There is no single priority order across the seven: `freq` (:90) only
 short-circuits the three *pitch* fields — `n` (:106), `note` (:120), and `s`
 (:132) are each guarded by `&& freq == 220.0`, so they're skipped once `freq`
 has set a real value. `gain` (:156) and `cutoff`/`lpf` (:176/:189) carry no
-such guard and are always read regardless of `freq`. If you touch this code
-path, keep both descriptions honest rather than trusting either one blindly.
+such guard and are always read regardless of `freq`.
+
+Two traps in that arrangement, both confirmed by rendering rather than by
+reading:
+
+- **`Freq(220)` is a no-op.** 220.0 is the renderer's default *and* the value
+  the guard tests for, so a `freq` of exactly 220 leaves `n`/`note`/`s` in
+  charge. `core.Note("c3").Set(core.Freq(220))` renders at c3 (523 zero
+  crossings per cycle); with `Freq(1000)` it renders at 1 kHz (3999).
+- **`lpf` is not a control name.** `core.Lpf` is an alias for `core.Cutoff`
+  and sets `cutoff`; nothing in the vocabulary emits an `lpf` field, so the
+  branch at :189 only ever fires for a hand-built value map. It is seven
+  field *lookups*, six of which a control can actually produce.
 
 ## Module layout
 
