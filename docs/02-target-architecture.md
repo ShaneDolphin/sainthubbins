@@ -13,7 +13,7 @@ go 1.25
 Go/
   go.mod
   cmd/
-    saint-hubbins/        # native CLI: saint-hubbins eval/serve/render/query
+    saint-hubbins/        # native CLI: saint-hubbins eval/serve/render/play/query/midi
     saint-hubbins-wasm/   # WASM entry: exports saintHubbins.queryPattern
   internal/
     core/             # Fraction, TimeSpan, Hap, State, Pattern, controls, scheduler, evaluate
