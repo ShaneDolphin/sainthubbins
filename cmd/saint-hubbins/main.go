@@ -14,6 +14,7 @@ import (
 
 	"codeberg.org/uzu/saint-hubbins/internal/audio"
 	"codeberg.org/uzu/saint-hubbins/internal/core"
+	shio "codeberg.org/uzu/saint-hubbins/internal/io"
 	"codeberg.org/uzu/saint-hubbins/internal/mini"
 	"codeberg.org/uzu/saint-hubbins/internal/osc"
 	"codeberg.org/uzu/saint-hubbins/internal/session"
@@ -22,12 +23,13 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: saint-hubbins <eval|serve|render|play|query> [args]")
+		fmt.Println("Usage: saint-hubbins <eval|serve|render|play|query|midi> [args]")
 		fmt.Println("  eval <code>        — evaluate pattern string")
 		fmt.Println("  query              — demo query: Stack(s(\"bd\"), s(\"sd\"))")
 		fmt.Println("  serve [addr]       — start live console server (default :8080)")
 		fmt.Println("  render <out.wav> <code> — offline render to WAV")
 		fmt.Println("  play <code> [host] [port] [secs] — stream to SuperDirt over OSC")
+		fmt.Println("  midi <out.mid> <code> [cycles] — render to a Standard MIDI File")
 		fmt.Println("  (also available as 'hubbins' — these go to eleven)")
 		os.Exit(1)
 	}
@@ -78,6 +80,21 @@ func main() {
 			secs = v
 		}
 		if err := runPlay(os.Args[2], host, port, secs, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "midi":
+		if len(os.Args) < 4 {
+			fmt.Println("midi <out.mid> <code> [cycles]")
+			os.Exit(1)
+		}
+		cycles := 4
+		if len(os.Args) >= 5 {
+			if v, err := strconv.Atoi(os.Args[4]); err == nil {
+				cycles = v
+			}
+		}
+		if err := runMIDI(os.Args[3], os.Args[2], cycles); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -138,6 +155,29 @@ func demoRender(outPath, code string) {
 		os.Exit(1)
 	}
 	fmt.Printf("wrote %s (%d samples)\n", outPath, len(samples))
+}
+
+// runMIDI evaluates code and writes it out as a Standard MIDI File.
+func runMIDI(code, path string, cycles int) error {
+	mini.RegisterStringParser()
+	pat, _, err := core.Evaluate(code, nil)
+	if err != nil {
+		pat = mini.Mini(code)
+	}
+	f := shio.RenderMIDI(pat, cycles, 480)
+	if err := f.Write(path); err != nil {
+		return err
+	}
+	notes := f.NoteOnCount()
+	fmt.Printf("wrote %s (%d cycles, %d notes)\n", path, cycles, notes)
+	if notes == 0 {
+		fmt.Fprintf(os.Stderr, "midi: warning: %q produced no notes — the file was written but is silent. "+
+			"This usually means the pattern has no resolvable pitches: a bare numeric token like \"0 1 2 3\" "+
+			"is a mini-notation string (a sample name), not a note. Use a bare drum name like \"bd\" instead "+
+			"(not \"bd:3\", which sets a note number, not a percussive hit), or build the pattern with the "+
+			"Go API's core.Note/core.N.\n", code)
+	}
+	return nil
 }
 
 // runPlay evaluates code and streams it to SuperDirt over OSC for seconds.

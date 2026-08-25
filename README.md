@@ -119,7 +119,7 @@ Open `http://localhost:8080` after `serve` — the page contains an editor with 
 
 ## CLI Reference
 
-The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Five subcommands:
+The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Six subcommands:
 
 | Command | Usage | Effect |
 |---|---|---|
@@ -128,6 +128,7 @@ The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Five sub
 | `serve` | `saint-hubbins serve [addr]` | Starts the console server. Default `addr` is `:8080`. |
 | `render` | `saint-hubbins render <out.wav> <code>` | Renders `<code>` for 4 cycles at 48 kHz and writes a 16-bit mono WAV |
 | `play` | `saint-hubbins play <code> [host] [port] [secs]` | Streams `<code>` to SuperDirt over OSC. Defaults: `host` `127.0.0.1`, `port` `57120`, `secs` `8`. **Requires SuperCollider with SuperDirt already running and listening on port 57120** — if you hear nothing, that is almost always why. |
+| `midi` | `saint-hubbins midi <out.mid> <code> [cycles]` | Renders `<code>` for `cycles` cycles (default 4) at 480 ticks per quarter note and writes a Standard MIDI File |
 
 `eval` and `render` accept **mini-notation** — the rhythm language documented in
 [the tutorial](docs/tutorial/02-mini-notation.md). Function-call syntax such as
@@ -141,6 +142,27 @@ as a string, so it takes the same path as `bd`, not the numeric `n` path. If
 you want a sample index, use `bd:3` (see `bd:1` in the mini-notation table
 below); if you want actual note numbers over OSC, build the pattern with the
 Go API's `core.N` instead of typing bare numbers into mini-notation.
+
+`midi` has the same bare-numeric trap, and one MIDI-specific trap of its own:
+
+- `midi out.mid "0 1 2 3"` writes a *valid but empty* MIDI file — no note
+  events at all, exit code 0. The same mini-notation rule applies: a bare
+  numeric token is a string, not a pitch, so every hap is skipped as
+  pitchless. Unlike `play`'s `bd:3` sample-index workaround, MIDI export
+  needs a resolvable note: reference a bare drum name like `bd` for a
+  percussive hit, or use `core.N`/`core.Note` from the Go API for real note
+  numbers. The CLI reports the emitted note count (`wrote out.mid (1 cycles,
+  0 notes)`) and warns on stderr when it is zero, so this should not be
+  silent.
+- `midi out.mid "bd:3"` exports **note 3 on channel 0**, not a drum hit on
+  channel 9 as `bd:3` in mini-notation table entries suggest. `HapToNote`
+  resolves `n` before `s` (`bd:3` sets both `s=bd` and `n=3`), so the numeric
+  index wins over the drum name. This is a known limitation, not a bug: the
+  offline audio renderer (`internal/audio/webaudio.go`) has the identical
+  `n`-before-`s` precedence, so MIDI export intentionally matches what
+  `render`/`play` would sound like. If you want a drum note over MIDI,
+  reference the drum name without a `:n` sample-index suffix (e.g. `bd`, not
+  `bd:3`).
 
 Examples:
 
