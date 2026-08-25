@@ -97,22 +97,58 @@ func TestEncodeSMFSortsOutOfOrderEvents(t *testing.T) {
 	}
 }
 
+// TestEncodeSMFPreservesSimultaneousEventOrder guards sort stability, which
+// is load-bearing: RenderMIDI on repeated notes ("c4 c4") emits
+// on@0, off@960, on@960, off@1920, and it is stability that keeps the
+// note-off before the note-on at the shared tick 960. An unstable sort would
+// let SendNoteOn(960) and SendNoteOff(960) swap, retriggering-then-killing
+// the repeated note in a DAW — with the rest of the suite still green.
+//
+// A single tied pair cannot catch that reliably: below Go's insertion-sort
+// threshold sort.Slice happens to match sort.SliceStable, and — verified
+// empirically against this exact package — even above that threshold a lone
+// tied pair sitting among otherwise-distinct, already-sorted ticks still
+// comes out in input order under the plain (unstable) sort; pdqsort's
+// pattern-detecting fast paths paper over it. What actually forces a
+// divergence is SEVERAL tied groups: four ticks, four events tied at each,
+// interleaved round-robin. Confirmed by repeatedly running this exact
+// fixture through sort.Slice vs sort.SliceStable: they disagree on every
+// run. (See the fix report for the swap-and-rerun proof against the real
+// EncodeSMF.)
 func TestEncodeSMFPreservesSimultaneousEventOrder(t *testing.T) {
-	// Events at the same tick must preserve their input order (stability).
-	// We verify this by checking that a note-off before a note-on at the same
-	// tick produces them in that order.
-	events := []TimedEvent{
-		{Tick: 100, Data: []byte{0x80, 60, 0}},   // note off
-		{Tick: 100, Data: []byte{0x90, 64, 100}}, // note on
+	ticks := []uint32{100, 200, 300, 400}
+	var events []TimedEvent
+	var groups [4][]TimedEvent // groups[i] = the four tied events at ticks[i], in input order
+	id := 0
+	for round := 0; round < 4; round++ {
+		for i, tick := range ticks {
+			// note = 60+id uniquely identifies this event so its position in
+			// the output is unambiguous.
+			e := TimedEvent{Tick: tick, Data: []byte{0x90, byte(60 + id), 100}}
+			events = append(events, e)
+			groups[i] = append(groups[i], e)
+			id++
+		}
 	}
+	if len(events) < 13 {
+		t.Fatalf("fixture has only %d events, want at least 13 (above the insertion-sort threshold)", len(events))
+	}
+
 	out := EncodeSMF(480, events)
 
-	// First event has delta from 0 to 100 (encoded as 0x64), then note off data.
-	// Second event has delta from 100 to 100 (encoded as 0x00), then note on data.
-	// We look for the sequence after the first delta: note-off data, then zero delta, then note-on data.
-	expected := []byte{0x80, 60, 0, 0x00, 0x90, 64, 100}
-	if !bytes.Contains(out, expected) {
-		t.Errorf("simultaneous events should preserve input order: expected % X in % X", expected, out)
+	// Every tied group must appear, back-to-back (zero delta between
+	// consecutive members), in its original input order.
+	for i, group := range groups {
+		var expected []byte
+		for j, e := range group {
+			if j > 0 {
+				expected = append(expected, 0x00) // zero delta: same tick as predecessor
+			}
+			expected = append(expected, e.Data...)
+		}
+		if !bytes.Contains(out, expected) {
+			t.Errorf("tied group at tick %d should preserve input order: expected % X in % X", ticks[i], expected, out)
+		}
 	}
 }
 

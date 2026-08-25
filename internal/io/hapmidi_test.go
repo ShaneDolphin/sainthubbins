@@ -43,11 +43,40 @@ func TestHapToNoteSkipsPitchlessEvents(t *testing.T) {
 	}
 }
 
+// TestRenderMIDIProducesPairedNoteEvents asserts the actual (tick, status,
+// note) tuples RenderMIDI emits, not just the event count: a bare count of 4
+// would pass even if RenderMIDI emitted four note-ons, or the wrong notes, or
+// the wrong ticks. This is the only test of RenderMIDI at all.
 func TestRenderMIDIProducesPairedNoteEvents(t *testing.T) {
 	pat := core.Note(core.FastCat(core.Pure(60), core.Pure(64)))
 	f := RenderMIDI(pat, 1, 480)
-	if len(f.events) != 4 {
-		t.Fatalf("got %d events, want 4 (two notes on and off)", len(f.events))
+
+	type tuple struct {
+		tick   uint32
+		status byte
+		note   byte
+	}
+	got := make([]tuple, len(f.events))
+	for i, e := range f.events {
+		if len(e.Data) < 2 {
+			t.Fatalf("event %d has too few bytes: % X", i, e.Data)
+		}
+		got[i] = tuple{tick: e.Tick, status: e.Data[0], note: e.Data[1]}
+	}
+
+	want := []tuple{
+		{tick: 0, status: 0x90, note: 60},    // note-on 60 at cycle start
+		{tick: 960, status: 0x80, note: 60},  // note-off 60 at the half-cycle
+		{tick: 960, status: 0x90, note: 64},  // note-on 64 at the half-cycle
+		{tick: 1920, status: 0x80, note: 64}, // note-off 64 at cycle end
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d events, want %d\ngot:  %+v\nwant: %+v", len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("event %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 
