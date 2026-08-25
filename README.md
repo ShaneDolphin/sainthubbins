@@ -55,7 +55,7 @@ The tutorial also covers [building a track from scratch](docs/tutorial/06-new-so
 - **Offline audio** — mono `float32` rendering to WAV with gain, filter, and note-to-frequency mapping
 - **Music theory** — scales, chords, voicings, and transposition
 - **Visuals** — pianoroll, spiral, and pitch-wheel helpers — Stonehenge edition
-- **WASM bridge** — `GOOS=js GOARCH=wasm` target exposing the engine to the browser via `saintHubbins.queryPattern` in `saint-hubbins.wasm`
+- **WASM build target** — the engine compiles under `GOOS=js GOARCH=wasm` to `saint-hubbins.wasm`, kept as a starting point for embedding it in someone else's page. Nothing in this repository loads it — the live console calls `POST /api/evaluate` over HTTP instead — and its `saintHubbins.queryPattern` export is still a stub that echoes its argument and returns an empty `haps` array
 - **I/O backends** — real: MIDI file export (`midi`) and real-time OSC to SuperDirt (`play`); still no-op stubs: Serial, MQTT, Gamepad, motion sensing
 
 ---
@@ -205,7 +205,7 @@ curl -s -X POST http://localhost:8080/api/pianoroll \
 
 - `web/server.go` — `Server` with `Handler()` and `Start()`; the console page is a Go template literal in that file (`consoleTemplate`), not a separate asset
 - `web/static/` — `saint-hubbins.wasm` + `wasm_exec.js` produced by `make wasm`
-- `cmd/saint-hubbins-wasm` — `//go:build js && wasm` entry exporting `saintHubbins.queryPattern(code)` and `version` on `js.Global()`
+- `cmd/saint-hubbins-wasm` — `//go:build js && wasm` entry exporting `saintHubbins.queryPattern(code)` and `version` on `js.Global()`. The console never loads it; it is here for embedders, and `queryPattern` is a stub (it returns `{code, length, haps: []}` without touching the pattern engine)
 
 Embed the server in another Go program:
 
@@ -301,7 +301,7 @@ err = audio.WriteWAV("out.wav", samples, 48000)
 ```
 Go/
   cmd/saint-hubbins/        # native CLI + console server entry (alias hubbins)
-  cmd/saint-hubbins-wasm/   # //go:build js && wasm — browser bridge
+  cmd/saint-hubbins-wasm/   # //go:build js && wasm — embedding target, not loaded by the console
   web/
     server.go         # Server.Handler(), /api/evaluate, /api/pianoroll, inline console template
     static/           # saint-hubbins.wasm + wasm_exec.js (generated)

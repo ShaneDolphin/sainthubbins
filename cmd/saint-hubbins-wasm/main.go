@@ -1,6 +1,10 @@
 //go:build js && wasm
+
 // Copyright (C) 2026 Saint Hubbins contributors — AGPL-3.0-or-later
-// cmd/saint-hubbins-wasm — WASM entry for live console bridge.
+// cmd/saint-hubbins-wasm — WASM entry point for embedding the engine in a
+// page. The live console does not load it (it calls POST /api/evaluate over
+// HTTP); see docs/03-roadmap.md. queryPattern is still a stub: it echoes the
+// code it is given and returns an empty haps array.
 
 package main
 

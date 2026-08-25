@@ -69,13 +69,16 @@ evaluator that doesn't exist.
 
 `make wasm` builds `web/static/saint-hubbins.wasm`, but the live console
 never loaded it — it calls `/api/evaluate` over HTTP. Decision: **keep
-building the target, stop advertising it in the console.** The console
-footer and package comment in `web/server.go` no longer claim a WASM
-bridge; `docs/tutorial/08-limitations.md` states plainly that the console
-uses HTTP by choice. Wiring WASM into the console (loading `wasm_exec.js`
-and calling `saintHubbins.queryPattern` from the browser) was rejected: it
-is real front-end work outside this plan and would create a second
-evaluation path that must stay in sync with the Go one. Deleting the
+building the target, stop advertising it as a bridge.** The console footer
+and package comment in `web/server.go`, the `README.md` feature list and
+project layout, and the package comment in `cmd/saint-hubbins-wasm` no longer
+claim one; `docs/tutorial/08-limitations.md` states plainly that the console
+uses HTTP by choice. Note that `saintHubbins.queryPattern` is a stub even for
+an embedder — it echoes the code it is handed and returns an empty `haps`
+array, without calling the pattern engine. Wiring WASM into the console
+(loading `wasm_exec.js` and implementing `saintHubbins.queryPattern` for
+real) was rejected: it is front-end work outside this plan and would create a
+second evaluation path that must stay in sync with the Go one. Deleting the
 target was also rejected: it costs nothing to keep and preserves embedding
 the engine in a page as a future option. Revisit only if the console grows
 enough that HTTP round-trip latency becomes a real problem — that is the
