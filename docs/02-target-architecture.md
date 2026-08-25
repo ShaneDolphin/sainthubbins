@@ -31,6 +31,8 @@ Go/
 
 ## Build Targets
 
+- `./scripts/check.sh` — every automated gate in one command; run this before
+  claiming work is done
 - `go test ./... -race -count=1`
 - `go vet ./...`
 - `GOOS=js GOARCH=wasm go build -o web/static/saint-hubbins.wasm ./cmd/saint-hubbins-wasm`

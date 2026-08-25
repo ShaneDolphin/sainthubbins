@@ -324,12 +324,23 @@ Go/
 
 ## Development
 
+One command runs every automated gate — vet, the race-enabled suite, the WASM
+build, `eval`/`render`/`midi`/`play`, all nine tutorial templates, and a
+rebrand check. Each gate asserts on the *output* it gets, not just on a zero
+exit status:
+
+```bash
+./scripts/check.sh
+```
+
+The individual steps, if you want one on its own:
+
 ```bash
 go test ./... -race -count=1
 go vet ./...
 go test -tags goja ./...
-go run ./tools/gen-controls
 GOOS=js GOARCH=wasm go build -o web/static/saint-hubbins.wasm ./cmd/saint-hubbins-wasm
+go run ./tools/gen-controls   # no-op today — it needs a js/ tree this repo does not ship
 ```
 
 ---
