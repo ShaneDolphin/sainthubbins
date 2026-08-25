@@ -148,10 +148,12 @@ Go API's `core.N` instead of typing bare numbers into mini-notation.
 - `midi out.mid "0 1 2 3"` writes a *valid but empty* MIDI file — no note
   events at all, exit code 0. The same mini-notation rule applies: a bare
   numeric token is a string, not a pitch, so every hap is skipped as
-  pitchless. Use the same workarounds as `play`: `bd:3` for a sample index,
-  or `core.N`/`core.Note` from the Go API for real note numbers. The CLI
-  reports the emitted note count (`wrote out.mid (1 cycles, 0 notes)`) and
-  warns on stderr when it is zero, so this should not be silent.
+  pitchless. Unlike `play`'s `bd:3` sample-index workaround, MIDI export
+  needs a resolvable note: reference a bare drum name like `bd` for a
+  percussive hit, or use `core.N`/`core.Note` from the Go API for real note
+  numbers. The CLI reports the emitted note count (`wrote out.mid (1 cycles,
+  0 notes)`) and warns on stderr when it is zero, so this should not be
+  silent.
 - `midi out.mid "bd:3"` exports **note 3 on channel 0**, not a drum hit on
   channel 9 as `bd:3` in mini-notation table entries suggest. `HapToNote`
   resolves `n` before `s` (`bd:3` sets both `s=bd` and `n=3`), so the numeric
