@@ -1,0 +1,137 @@
+# Saint Hubbins — conventions
+
+Go live-coding pattern engine (`codeberg.org/uzu/saint-hubbins`). A `Pattern`
+is a pure function of a time span: query it once over one cycle, or once over
+a thousand, and it must return the same events either way. Most rules below
+exist to protect that property, because the renderer only ever issues one
+query per render — a bug that only shows up under a wide query reaches
+listeners and nothing else.
+
+## Cycle-dependent combinators must call `SplitQueries()`
+
+If a combinator reads the cycle number off the query span — `state.Span.Begin.Sam()`
+or `.Floor()` on it — and makes a decision from it (which branch to take, what
+transform to apply), it **must** call `.SplitQueries()` on the returned
+pattern, or iterate `state.Span.SpanCycles()` itself.
+
+**Why:** a query spanning multiple cycles gives you one `state.Span` for the
+whole range. Read the cycle from `Span.Begin` without splitting and you apply
+one cycle's decision across the entire span — the combinator is only correct
+by accident, when the query happens to be exactly one cycle wide.
+
+**Why this bites in practice, not just in theory:** `internal/audio/webaudio.go:48`
+renders with exactly one call, `pattern.QueryArc(0, cycles)`, over the whole
+track. `Every` and `LastOf` originally read the cycle from the span start
+without splitting. Every unit test passed — the suite queries cycle by cycle
+— and every rendered track silently lost or duplicated its variations,
+because the renderer's one query spans all of them at once. 1,200 tests, zero
+of them wide enough to catch it.
+
+Four non-test sites in `internal/core` do this today, and all four call it correctly:
+
+| Reads the cycle at | Calls `SplitQueries()` at |
+|---|---|
+| `pattern_misc.go:151` (`LastOf`) | `pattern_misc.go:156` |
+| `pattern_random.go:148` (randomness) | `pattern_random.go:158` |
+| `pattern_time.go:193` (`Every`) | `pattern_time.go:198` |
+| `pattern_vlpf_morph.go:159` (vlpf morph) | `pattern_vlpf_morph.go:174` |
+
+Before adding or changing any combinator that touches the cycle number, run:
+
+```
+grep -rn "state.Span.Begin.Sam()" internal/core/*.go | grep -v _test
+```
+
+Every hit must resolve to a `SplitQueries()` call (or its own `SpanCycles()`
+loop). If your new code shows up in that grep without one, that's the bug.
+
+**Test both query shapes.** A test that only queries one cycle at a time
+cannot see this class of bug — it's exactly what let `Every`/`LastOf` ship
+broken. When you add a cycle-dependent combinator, assert that one N-cycle
+query produces the same haps as N separate one-cycle queries stitched
+together.
+
+## Only seven controls reach the offline audio
+
+`internal/audio/webaudio.go`'s sine renderer reads exactly: `freq` (:90),
+`n` (:106), `note` (:120), `s` (:132), `gain` (:156), `cutoff` (:176),
+`lpf` (:189). The other ~290 controls in the vocabulary are carried through
+as data and silently ignored by this renderer — don't "fix" a control that
+appears to do nothing to the WAV; check this list first.
+
+`docs/tutorial/08-limitations.md` describes this as "only five controls" —
+accurate for what a user writes in the tutorial (`Note`/`N`/`S`, `Gain`,
+`Cutoff`/`Lpf`), but the renderer also checks a `freq` field directly, ahead
+of the other five in priority. If you touch this code path, keep both
+descriptions honest rather than trusting either one blindly.
+
+## Module layout
+
+Engine packages live under `internal/`; Go only lets code inside this module
+import them, so a song or tool that needs `internal/core` etc. must live in
+this repository — you cannot `go get` this engine into a separate project.
+Example/teaching programs go in `examples/`.
+
+## No new third-party dependencies without discussion
+
+`go.mod` has exactly one direct dependency (`github.com/dop251/goja`). A
+single dependency-free Go binary is the project's selling point — that's why
+the OSC and MIDI encoders here are hand-written instead of imported. Adding a
+new direct dependency is a deliberate trade against that, not a routine
+choice.
+
+## License header
+
+Every source file starts with:
+
+```go
+// Copyright (C) 2026 Saint Hubbins contributors — AGPL-3.0-or-later
+```
+
+Match it exactly (including the em dash) on new files.
+
+## `gofmt`: format only what you touch
+
+20 non-test files under `internal/core` are not currently `gofmt`-clean. Do
+not run a blanket `gofmt -w` across the tree — it mixes unrelated cosmetic
+churn into your diff and makes real changes harder to review. Format the
+files you actually edit.
+
+## `examples/` is teaching material
+
+These programs are read as documentation, not just run. A comment that
+misdescribes what its code does is a defect, the same as a bug — verify a
+comment by actually running the pattern it describes, don't take it on faith
+from a previous version of the file.
+
+## Documented numbers are assertions, not decoration
+
+`examples/examples_test.go` builds and runs all nine tutorial templates and
+asserts each produces non-silent, non-clipping audio of the expected length.
+`docs/tutorial/templates/*.md` additionally quotes each template's exact
+event count and peak level in prose. Changing engine behavior that affects
+any template means re-running it and updating the documented numbers — a
+stale number in the docs is as wrong as a stale number in a test.
+
+## Two lessons about tests that look fine
+
+1. **A test can name a property it cannot defend.** Several tests here
+   asserted an event's *presence* (`bytes.Contains`) where the actual claim
+   was about *order* — and would have passed against the exact bug they were
+   meant to catch. When you write a test for a property, break the property
+   on purpose and confirm the test actually fails. An assertion nobody has
+   watched fail is just slower than no assertion.
+2. **Verify with the case that could fail, not the case that confirms.** A
+   note-parser comparison passed across eight inputs because every one
+   happened to be octave-qualified — bare note names were silently dropped
+   and nothing noticed. A sort-stability fixture never reproduced because it
+   used two elements, well under Go's insertion-sort threshold of twelve.
+   Pick inputs that could expose the bug, not inputs that happen to agree
+   with the code.
+
+## Before claiming work is complete
+
+Run `./scripts/check.sh`. It runs vet, the race-enabled test suite, the wasm
+build, and content-asserting checks on eval/render/midi/play plus all nine
+templates — a passing exit code alone is not the bar; the script inspects
+actual output for each of those, not just exit status.
