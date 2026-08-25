@@ -90,8 +90,13 @@ make test        # go test ./... -race -count=1
 make lint        # go vet ./...
 make wasm        # GOOS=js GOARCH=wasm build -> web/static/saint-hubbins.wasm
 make serve       # go run ./cmd/saint-hubbins serve
-make fmt         # gofmt -w .
+make gen         # go generate ./... — no-op; the repo has no go:generate directives
+make fmt         # gofmt -w . — see below before you run it
 ```
+
+`make fmt` reformats the whole tree, and 20 non-test files under
+`internal/core` are not currently `gofmt`-clean, so one run drops all of them
+into your diff. Format the files you actually edited instead.
 
 ---
 
