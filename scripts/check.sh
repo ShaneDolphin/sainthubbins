@@ -47,10 +47,23 @@ check "go test -race" go test ./... -race -count=1
 # swallows the error and prints a message instead). `make wasm` returning
 # success proves nothing by itself — only inspecting the resulting binary
 # does. A real WASM module starts with the 4-byte magic number \0asm.
+#
+# The artefact path is fixed (web/static/saint-hubbins.wasm), not a fresh
+# temp path like the render/midi gates use — that's what `make wasm`
+# hardcodes, and it's the file users actually get. A *failed* `go build -o
+# file` leaves an existing `file` completely untouched, so without removing
+# it first, a stale valid artefact from any earlier successful build would
+# satisfy the magic-number check while today's build silently failed. We
+# remove it before building so the check can only pass on output from this
+# run. (`make wasm || exit 1` below is belt-and-braces, not the real
+# protection — that Makefile target's `||` fallback means it essentially
+# never returns nonzero; the magic-number check on the freshly-built
+# artefact is what actually catches a broken wasm target.)
 check "wasm builds" bash -c '
-  make wasm || exit 1
   f="web/static/saint-hubbins.wasm"
-  [ -s "$f" ] || { echo "$f missing or empty"; exit 1; }
+  rm -f "$f"
+  make wasm || exit 1
+  [ -s "$f" ] || { echo "$f missing or empty after build"; exit 1; }
   magic=$(dd if="$f" bs=1 count=4 2>/dev/null)
   [ "$magic" = "$(printf "\0asm")" ] || { echo "$f does not start with the wasm magic number (\\0asm)"; exit 1; }
 '
