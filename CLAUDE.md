@@ -100,9 +100,11 @@ reading:
   charge. `core.Note("c3").Set(core.Freq(220))` renders at c3 (523 zero
   crossings per cycle); with `Freq(1000)` it renders at 1 kHz (3999).
 - **`lpf` is not a control name.** `core.Lpf` is an alias for `core.Cutoff`
-  and sets `cutoff`; nothing in the vocabulary emits an `lpf` field, so the
-  branch at :189 only ever fires for a hand-built value map. It is seven
-  field *lookups*, six of which a control can actually produce.
+  and sets `cutoff`. No *control* emits a bare `lpf` field, though
+  `Pattern.Vlpf` (`pattern_vlpf_morph.go:29,33`) does — it always sets
+  `cutoff` alongside, so the branch at :189 still never fires from engine
+  code — only for a hand-built value map. It is seven field *lookups*, six
+  of which a control can actually produce.
 
 ## Module layout
 
@@ -158,7 +160,8 @@ practice. If you must add a control, edit it directly and say so in the
 commit message.
 
 `web/static/saint-hubbins.wasm` and `wasm_exec.js` are build products of
-`make wasm`, not source. They are checked in so `serve` can offer them.
+`make wasm`, not source, and they are **git-ignored** (`.gitignore:11-12`).
+Run `make wasm` before `serve`, or `/static/saint-hubbins.wasm` 404s.
 
 **A generated file and its source must move in the same commit.** This
 branch's own `parser.peg` bug was exactly this drift: a rebrand `sed` scoped
@@ -189,13 +192,13 @@ three markers — it is not a general rename check.
 
 ## `gofmt`: format only what you touch
 
-20 non-test files under `internal/core` are not currently `gofmt`-clean. Do
-not run a blanket `gofmt -w` across the tree — it mixes unrelated cosmetic
+`gofmt -l .` reports **850** unclean files — 20 non-test files under
+`internal/core` and ~830 tests. Do not run a blanket `gofmt -w` across the tree — it mixes unrelated cosmetic
 churn into your diff and makes real changes harder to review. Format the
 files you actually edit.
 
 **`make fmt` is `gofmt -w .`.** It is right there in the `Makefile` next to
-`make test` and `make lint`, and running it once rewrites those 20 files into
+`make test` and `make lint`, and running it once rewrites all 850 into
 your diff. The target stays — someone may deliberately want it — but don't
 reach for it as the formatting step of ordinary work. `gofmt -w` the specific
 files you changed instead.

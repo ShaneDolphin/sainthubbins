@@ -94,9 +94,10 @@ make gen         # go generate ./... — no-op; the repo has no go:generate dire
 make fmt         # gofmt -w . — see below before you run it
 ```
 
-`make fmt` reformats the whole tree, and 20 non-test files under
-`internal/core` are not currently `gofmt`-clean, so one run drops all of them
-into your diff. Format the files you actually edited instead.
+`make fmt` reformats the whole tree, and **850 files are not currently
+`gofmt`-clean** (20 of them non-test files under `internal/core`, the rest
+tests), so one run drops all of them into your diff. Format the files you
+actually edited instead.
 
 ---
 
@@ -318,7 +319,7 @@ Go/
     draw/             # Pianoroll, Spiral, pitch wheel, animation
     tonal/            # Scale / Chord / Voicing / Transpose
     session/          # live session (evaluation + scheduler)
-  tools/gen-controls/ # regenerates internal/core/controls_gen.go
+  tools/gen-controls/ # generated controls_gen.go; cannot re-run today (see CLAUDE.md)
   go.mod              # module codeberg.org/uzu/saint-hubbins, go 1.25, github.com/dop251/goja
   Makefile
   LICENSE             # AGPL-3.0-or-later

@@ -26,7 +26,7 @@ Go/
   web/
     server.go         # http.ServeMux, console handlers, static, API, inline console template
     static/saint-hubbins.wasm + wasm_exec.js
-  tools/gen-controls  # generates controls_gen.go (checked-in)
+  tools/gen-controls  # generated controls_gen.go; cannot re-run today (see CLAUDE.md)
 ```
 
 ## Build Targets

@@ -11,8 +11,10 @@ its magic number, not just `make`'s exit code — see the script's comments),
 the CLI's `eval`/`render`/`midi` subcommands (asserted on real output
 content, not just a zero exit status), the `play` → SuperDirt OSC path, all
 nine tutorial templates, and the rebrand check for leftover Strudel
-dependencies/import paths. Every gate asserts on content; none can pass
-vacuously. The two gates that delegate to `go test -run` grep the `-v` output
+dependencies/import paths. The seven behavioural gates assert on content;
+none of them can pass vacuously. (`go vet` and the race-enabled suite are
+judged on exit status — that is what those tools report.) The two gates
+that delegate to `go test -run` grep the `-v` output
 for the named test's own `--- PASS:` line, because `go test -run` prints
 "no tests to run" and exits **0** when the pattern matches nothing — a
 renamed or deleted test would otherwise turn its gate green forever. See the
