@@ -1,9 +1,9 @@
 # Roadmap — Saint Hubbins
 
 This file is kept honest by running its gates, not by asserting them. Every
-gate below was executed against this branch before being written down; see
-`.superpowers/sdd/2026-08-24-repo-hygiene/task-1-report.md` for the exact
-commands and their output.
+gate below was executed against this branch before being written down, and
+`./scripts/check.sh` re-runs the automatable ones on demand — run it rather
+than taking this page's word for anything.
 
 ## Phases (shipped)
 
@@ -31,15 +31,25 @@ replicate, `%n` polymeter, and `Add` on control bags) are fixed. The
 tutorial's former "Mini-notation differences from Strudel" table is gone —
 `grep -rn "Mini-notation differences" docs/tutorial/` returns nothing.
 
+**Repo hygiene, shipped:** this file, `docs/05-execution-checklist.md`,
+`scripts/check.sh` and `CLAUDE.md` were rewritten together to remove the
+vacuous gate described under "Text evaluator" below and to give the repo one
+runnable entry point instead of a checklist a human ticks. `./scripts/check.sh`
+exits 0 with all nine gates passing, and each gate asserts on output content
+rather than exit status — see the script's comments for the specific bug each
+one was built to catch. Plan:
+`docs/superpowers/plans/2026-08-24-repo-hygiene.md`.
+
 Historical roadmap that referenced Strudel JS is archived at
 `docs/archive/strudel-legacy/03-roadmap.md`.
 
 ## Remaining work
 
-Two tracks are genuinely open. (Three tracks named in earlier drafts of the
+One track is genuinely open; the WASM question below is settled and recorded
+here so it is not asked again. (Three tracks named in earlier drafts of the
 hygiene plan — real-time OSC output, the pattern-engine gaps, and MIDI file
-export — have already shipped and are folded into Phase 4/5 above; do not
-re-open them.)
+export — have already shipped and are folded into Phase 4/5 above; repo
+hygiene has shipped too, see the note above it. Do not re-open them.)
 
 ### Text evaluator
 
@@ -70,12 +80,3 @@ target was also rejected: it costs nothing to keep and preserves embedding
 the engine in a page as a future option. Revisit only if the console grows
 enough that HTTP round-trip latency becomes a real problem — that is the
 condition that would change this answer.
-
-### Repo hygiene
-
-This file has just been rewritten to remove the vacuous gate described
-above. `docs/05-execution-checklist.md`, `scripts/check.sh`, and `CLAUDE.md`
-are still outstanding — a later task in the same plan.
-
-- **Gate (not yet passing):** `./scripts/check.sh` exits 0.
-- **Plan:** `docs/superpowers/plans/2026-08-24-repo-hygiene.md`
