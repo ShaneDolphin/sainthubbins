@@ -107,6 +107,28 @@ func TestFileMIDICursorBackwards(t *testing.T) {
 	}
 }
 
+// TestFileMIDINoteOnCount confirms NoteOnCount reflects only note-on
+// messages, ignoring note-offs and CCs, and is 0 for a file with no notes at
+// all — this is what lets the CLI tell a silently-empty render (e.g. a
+// pattern of bare mini-notation numerics) apart from a real one.
+func TestFileMIDINoteOnCount(t *testing.T) {
+	f := NewFileMIDI(480)
+	if got := f.NoteOnCount(); got != 0 {
+		t.Fatalf("empty FileMIDI: NoteOnCount() = %d, want 0", got)
+	}
+
+	f.At(0)
+	_ = f.SendNoteOn(0, 60, 100)
+	_ = f.SendCC(0, 7, 90)
+	f.At(480)
+	_ = f.SendNoteOff(0, 60)
+	_ = f.SendNoteOn(1, 64, 90)
+
+	if got := f.NoteOnCount(); got != 2 {
+		t.Errorf("NoteOnCount() = %d, want 2 (note-offs and CCs must not count)", got)
+	}
+}
+
 func TestFileMIDIClampingBehavior(t *testing.T) {
 	// Test channel masking: channel 20 should mask to 4 (20 & 0x0F = 4)
 	f := NewFileMIDI(480)

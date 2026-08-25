@@ -27,6 +27,20 @@ func NewFileMIDI(ticksPerQuarter int) *FileMIDI {
 // At moves the cursor. Subsequent messages are stamped at this tick.
 func (f *FileMIDI) At(tick uint32) { f.cursor = tick }
 
+// NoteOnCount reports how many note-on messages have been recorded so far.
+// Callers use this to tell a pattern that resolved to real notes apart from
+// one that resolved to nothing — a mini-notation pattern of bare numerics,
+// for example, produces a header-only file with zero note-ons and no error.
+func (f *FileMIDI) NoteOnCount() int {
+	n := 0
+	for _, e := range f.events {
+		if len(e.Data) > 0 && e.Data[0]&0xF0 == 0x90 {
+			n++
+		}
+	}
+	return n
+}
+
 func (f *FileMIDI) record(data ...byte) error {
 	f.events = append(f.events, TimedEvent{Tick: f.cursor, Data: data})
 	return nil
