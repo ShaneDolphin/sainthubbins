@@ -6,7 +6,7 @@ Saint Hubbins is a **Go-native live-coding music environment**. Patterns are pur
 
 - **Module**: `codeberg.org/uzu/saint-hubbins`, Go 1.25
 - **CLI**: `saint-hubbins` (alias `hubbins`) — `eval`, `serve`, `render`, `query`
-- **Live console**: Go HTTP server at `http://localhost:8080` (`web/server.go`, `web/templates/console.html`), talking to itself over HTTP — see below
+- **Live console**: Go HTTP server at `http://localhost:8080` (`web/server.go`, page included as an inline Go template), talking to itself over HTTP — see below
 - **License**: AGPL-3.0-or-later
 
 ## Goals

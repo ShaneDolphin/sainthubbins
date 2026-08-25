@@ -203,7 +203,7 @@ curl -s -X POST http://localhost:8080/api/pianoroll \
 
 ## Web Console
 
-- `web/server.go` — `Server` with `Handler()` and `Start()`, template in `web/templates/console.html`
+- `web/server.go` — `Server` with `Handler()` and `Start()`; the console page is a Go template literal in that file (`consoleTemplate`), not a separate asset
 - `web/static/` — `saint-hubbins.wasm` + `wasm_exec.js` produced by `make wasm`
 - `cmd/saint-hubbins-wasm` — `//go:build js && wasm` entry exporting `saintHubbins.queryPattern(code)` and `version` on `js.Global()`
 
@@ -303,8 +303,7 @@ Go/
   cmd/saint-hubbins/        # native CLI + console server entry (alias hubbins)
   cmd/saint-hubbins-wasm/   # //go:build js && wasm — browser bridge
   web/
-    server.go         # Server.Handler(), /api/evaluate, /api/pianoroll
-    templates/console.html
+    server.go         # Server.Handler(), /api/evaluate, /api/pianoroll, inline console template
     static/           # saint-hubbins.wasm + wasm_exec.js (generated)
   internal/
     core/             # Fraction, TimeSpan, Hap, State, Pattern, controls, signals, scheduler

@@ -24,8 +24,7 @@ Go/
     session/          # live session (evaluation + scheduler)
     tonal/ xen/ edo/ codemirror/ io/ osc/ serial/ mqtt/ gamepad/ motion/ hydra/ csound/ ...
   web/
-    server.go         # http.ServeMux, console handlers, static, API
-    templates/console.html
+    server.go         # http.ServeMux, console handlers, static, API, inline console template
     static/saint-hubbins.wasm + wasm_exec.js
   tools/gen-controls  # generates controls_gen.go (checked-in)
 ```
