@@ -50,3 +50,61 @@ func TestRenderMIDIProducesPairedNoteEvents(t *testing.T) {
 		t.Fatalf("got %d events, want 4 (two notes on and off)", len(f.events))
 	}
 }
+
+// TestHapToNoteBareNoteNames guards against a private note parser silently
+// dropping notes that the audio renderer accepts: bare pitch classes with no
+// octave digit must resolve, defaulting to octave 4 like the audio paths.
+func TestHapToNoteBareNoteNames(t *testing.T) {
+	cases := map[string]int{"c": 60, "e": 64, "g": 67}
+	for name, want := range cases {
+		note, _, _, ok := HapToNote(hapWith(map[string]any{"note": name}))
+		if !ok {
+			t.Errorf("%q should resolve to a note, got ok=false", name)
+			continue
+		}
+		if note != want {
+			t.Errorf("%q = %d, want %d", name, note, want)
+		}
+	}
+}
+
+// TestHapToNoteSharpFlatSuffixNames guards against a private note parser that
+// only understands "#"/"b" accidentals: "s"/"f" suffix spellings (as used
+// elsewhere in the engine, e.g. core.NoteToMidi) must also resolve.
+func TestHapToNoteSharpFlatSuffixNames(t *testing.T) {
+	cases := map[string]int{"cs4": 61, "ef4": 63}
+	for name, want := range cases {
+		note, _, _, ok := HapToNote(hapWith(map[string]any{"note": name}))
+		if !ok {
+			t.Errorf("%q should resolve to a note, got ok=false", name)
+			continue
+		}
+		if note != want {
+			t.Errorf("%q = %d, want %d", name, note, want)
+		}
+	}
+}
+
+// TestHapToNoteC4StillWorks is the regression guard for the already-working
+// explicit-octave path once note-name parsing routes through core.NoteToMidi.
+func TestHapToNoteC4StillWorks(t *testing.T) {
+	note, _, _, ok := HapToNote(hapWith(map[string]any{"note": "c4"}))
+	if !ok || note != 60 {
+		t.Errorf("c4 = %d, ok=%v, want 60, true", note, ok)
+	}
+}
+
+// TestHapToNoteDrumNameResolvesViaDrumMapNotNoteParser confirms drum names
+// still resolve via drumNotes and not core.NoteToMidi, and land on channel 9.
+func TestHapToNoteDrumNameResolvesViaDrumMapNotNoteParser(t *testing.T) {
+	note, _, ch, ok := HapToNote(hapWith("bd"))
+	if !ok {
+		t.Fatal("bd should resolve via the drum map")
+	}
+	if note != 36 {
+		t.Errorf("bd note = %d, want 36 (drum map, not note parser)", note)
+	}
+	if ch != 9 {
+		t.Errorf("bd channel = %d, want 9 (percussion channel)", ch)
+	}
+}

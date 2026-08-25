@@ -5,7 +5,6 @@ package io
 
 import (
 	"strconv"
-	"strings"
 
 	"codeberg.org/uzu/saint-hubbins/internal/core"
 )
@@ -18,6 +17,15 @@ var drumNotes = map[string]int{
 // HapToNote resolves a hap to a MIDI note. Precedence matches the audio
 // renderer: n, then note, then a drum name. An event carrying no pitch returns
 // ok == false so callers skip it rather than emitting a spurious middle C.
+//
+// Note names are parsed by core.NoteToMidi with an explicit default octave of
+// 4 (matching internal/audio/webaudio.go and internal/superdough, which is
+// what a MIDI file should sound like when played back) rather than
+// core.NoteToMidi's own bare default of 3. Note: MIDIFromHaps elsewhere in
+// this package calls core.NoteToMidi without a default octave argument, so it
+// resolves bare note names one octave lower than HapToNote does — a
+// pre-existing discrepancy, not something this function should paper over by
+// changing that call site.
 func HapToNote(h core.Hap) (note, velocity, channel int, ok bool) {
 	velocity, channel = 100, 0
 	m, isBag := h.Value.(map[string]any)
@@ -84,31 +92,19 @@ func toF(v any) float64 {
 	return 0
 }
 
-// noteNameToMIDI parses "c4", "f#3", "eb2". Middle C is c4 = 60.
+// noteNameToMIDI parses a note name such as "c4", "f#3", "eb2", "cs", or a
+// bare pitch class like "c" (defaulting to octave 4, so middle C is both "c"
+// and "c4" == 60). It is a thin adapter over core.NoteToMidi, which already
+// handles the full note-name grammar (bare names, "#"/"b" and "s"/"f"
+// accidentals, negative octaves) used by the audio renderer, so MIDI output
+// accepts the same note names as `render` and `play` instead of a private,
+// narrower parser silently dropping notes those paths accept.
 func noteNameToMIDI(s string) (int, bool) {
-	if len(s) < 2 {
-		return 0, false
-	}
-	base := map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
-	n := strings.ToLower(s)
-	semi, found := base[n[0]]
-	if !found {
-		return 0, false
-	}
-	i := 1
-	if len(n) > 2 && (n[1] == '#' || n[1] == 'b') {
-		if n[1] == '#' {
-			semi++
-		} else {
-			semi--
-		}
-		i = 2
-	}
-	oct, err := strconv.Atoi(n[i:])
+	n, err := core.NoteToMidi(s, 4)
 	if err != nil {
 		return 0, false
 	}
-	return (oct+1)*12 + semi, true
+	return n, true
 }
 
 // RenderMIDI queries cycles of pat and records paired note-on/note-off events.
