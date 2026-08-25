@@ -50,7 +50,15 @@ func HapToNote(h core.Hap) (note, velocity, channel int, ok bool) {
 			velocity = 127
 		}
 	}
+	// Both "channel" and "midichan" are generated controls (see
+	// internal/core/controls_gen.go); MIDIFromHaps elsewhere in this package
+	// reads midichan, and core.Midichan is the Strudel-canonical spelling, so
+	// prefer it here when both are present rather than silently defaulting a
+	// midichan-only hap to channel 0.
 	if c, found := m["channel"]; found {
+		channel = int(toF(c))
+	}
+	if c, found := m["midichan"]; found {
 		channel = int(toF(c))
 	}
 	if v, found := m["n"]; found {

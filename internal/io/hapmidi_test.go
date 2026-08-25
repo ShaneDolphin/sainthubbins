@@ -114,12 +114,34 @@ func TestHapToNoteSharpFlatSuffixNames(t *testing.T) {
 	}
 }
 
-// TestHapToNoteC4StillWorks is the regression guard for the already-working
-// explicit-octave path once note-name parsing routes through core.NoteToMidi.
-func TestHapToNoteC4StillWorks(t *testing.T) {
-	note, _, _, ok := HapToNote(hapWith(map[string]any{"note": "c4"}))
-	if !ok || note != 60 {
-		t.Errorf("c4 = %d, ok=%v, want 60, true", note, ok)
+// TestHapToNoteAcceptsMidichan confirms HapToNote accepts both "channel" and
+// "midichan" — both are generated controls, and midichan is the
+// Strudel-canonical spelling (core.Midichan) as well as the one
+// MIDIFromHaps, in the same package, already reads. midichan wins when both
+// are present.
+func TestHapToNoteAcceptsMidichan(t *testing.T) {
+	_, _, ch, ok := HapToNote(hapWith(map[string]any{"note": 60, "midichan": 3}))
+	if !ok {
+		t.Fatal("expected the hap to resolve to a note")
+	}
+	if ch != 3 {
+		t.Errorf("midichan channel = %d, want 3", ch)
+	}
+
+	_, _, ch, ok = HapToNote(hapWith(map[string]any{"note": 60, "channel": 2}))
+	if !ok {
+		t.Fatal("expected the hap to resolve to a note")
+	}
+	if ch != 2 {
+		t.Errorf("channel = %d, want 2", ch)
+	}
+
+	_, _, ch, ok = HapToNote(hapWith(map[string]any{"note": 60, "channel": 2, "midichan": 5}))
+	if !ok {
+		t.Fatal("expected the hap to resolve to a note")
+	}
+	if ch != 5 {
+		t.Errorf("midichan should win over channel: got %d, want 5", ch)
 	}
 }
 
