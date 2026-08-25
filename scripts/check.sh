@@ -115,8 +115,24 @@ check "midi writes a genuine Standard MIDI File" bash -c '
 # opens a real UDP listener and asserts the OSC bytes that arrive carry the
 # sound name ("bd") — real content over a real socket. Run it rather than
 # reimplementing a weaker version here.
-check "play reaches a socket (OSC to SuperDirt)" \
-  go test ./cmd/saint-hubbins/... -run TestRunPlaySendsToSuperDirt -v -count=1
+#
+# `go test -run <Name>` is NOT self-asserting: a pattern that matches nothing
+# prints "testing: warning: no tests to run" and exits 0. Renaming or
+# deleting the test would turn this gate green forever while nothing ran —
+# the same vacuous-pass shape as the old `eval 's("bd sd")'` gate this script
+# was written to replace. So grep the -v output for the test's own PASS line;
+# that can only appear if the named test actually executed. The trailing " ("
+# in the pattern matches go test's "--- PASS: <name> (1.00s)" and pins the
+# name exactly: -run is an unanchored regex, so a rename to
+# TestRunPlaySendsToSuperDirtSomethingElse would still be *selected* by -run
+# and would satisfy a prefix-only grep.
+check "play reaches a socket (OSC to SuperDirt)" bash -c '
+  out=$(go test ./cmd/saint-hubbins/... -run TestRunPlaySendsToSuperDirt -v -count=1 2>&1) || { echo "$out"; exit 1; }
+  echo "$out" | grep -q -- "--- PASS: TestRunPlaySendsToSuperDirt (" || {
+    echo "TestRunPlaySendsToSuperDirt did not run (go test exits 0 when -run matches nothing):"
+    echo "$out"; exit 1
+  }
+'
 
 # templates: examples/examples_test.go's TestTemplatesRenderAudio builds and
 # runs all nine tutorial templates and asserts each WAV has a nonzero peak
@@ -124,8 +140,20 @@ check "play reaches a socket (OSC to SuperDirt)" \
 # than "the binary exited 0 and a file exists". Run it explicitly so a
 # failure here is attributed to the templates, not buried in the full
 # `go test ./...` gate above.
-check "all nine example templates build and run" \
-  go test ./examples/... -run TestTemplatesRenderAudio -v -count=1
+#
+# Same "no tests to run" hazard as the play gate above, plus one more: this
+# gate's name claims *nine*. Counting the per-template subtest PASS lines
+# anchors that number in the gate itself, so adding or dropping a template
+# without updating the name fails here instead of quietly making the name a
+# lie.
+check "all nine example templates build and run" bash -c '
+  out=$(go test ./examples/... -run TestTemplatesRenderAudio -v -count=1 2>&1) || { echo "$out"; exit 1; }
+  n=$(echo "$out" | grep -c -- "--- PASS: TestTemplatesRenderAudio/")
+  [ "$n" -eq 9 ] || {
+    echo "expected 9 passing template subtests, got $n:"
+    echo "$out"; exit 1
+  }
+'
 
 # Rebrand check: NOT a bare grep for "strudel" or "REPL".
 #
@@ -149,19 +177,37 @@ check "all nine example templates build and run" \
 # Exclusions: ATTRIBUTION.md (deliberately documents the upstream project),
 # docs/archive/ (frozen legacy history), docs/superpowers/ and .superpowers/
 # (planning artifacts about this very rebrand, which necessarily discuss
-# these markers as text), internal/mini/krill.peg's header (a copyright
-# attribution for a ported grammar file, same category as ATTRIBUTION.md),
-# and this script plus the execution checklist it backs — both *document*
-# the markers they check for, in comments/prose, so they legitimately
-# contain the literal substrings without being a dependency on them.
+# these markers as text), the one copyright line in internal/mini/krill.peg
+# (a ported grammar file's upstream attribution, same category as
+# ATTRIBUTION.md), and this script plus the execution checklist it backs —
+# both *document* the markers they check for, in comments/prose, so they
+# legitimately contain the literal substrings without being a dependency on
+# them.
+#
+# Every exclusion is a path-anchored `^\./...` filter, not `--exclude-dir`.
+# --exclude-dir matches a *basename* anywhere in the tree, so
+# `--exclude-dir=archive` would also skip a future internal/archive/ and
+# `--exclude-dir=superpowers` a future tools/superpowers/ — silently, with no
+# way to notice. Anchoring on the path says exactly which directory is
+# exempt. (`--exclude-dir=.git` stays: there, matching every .git directory
+# anywhere is the intent, and its packed objects are what -I would otherwise
+# have to scan.)
+#
+# krill.peg is excluded by its attribution *line*, not by filename. Its
+# sibling parser.peg is where this gate's original bug lived — a stale import
+# path in a generated parser's source, missed by a rebrand sed scoped to
+# *.go. Excluding krill.peg wholesale would blind the gate to that exact bug
+# recurring in the one file most like the one it already caught.
 check "no leftover Strudel dependency/import path" bash -c '
-  hits=$(grep -rnI \
-      --exclude-dir=.git --exclude-dir=.superpowers --exclude-dir=archive --exclude-dir=superpowers \
+  hits=$(grep -rnI --exclude-dir=.git \
       -e "@strudel/" -e "strudel-go" -e "codeberg\.org/uzu/strudel" . \
-    | grep -v "^\./ATTRIBUTION.md:" \
-    | grep -v "^\./internal/mini/krill.peg:" \
-    | grep -v "^\./scripts/check.sh:" \
-    | grep -v "^\./docs/05-execution-checklist.md:" \
+    | grep -v "^\./\.superpowers/" \
+    | grep -v "^\./docs/archive/" \
+    | grep -v "^\./docs/superpowers/" \
+    | grep -v "^\./ATTRIBUTION\.md:" \
+    | grep -v "^\./scripts/check\.sh:" \
+    | grep -v "^\./docs/05-execution-checklist\.md:" \
+    | grep -v "^\./internal/mini/krill\.peg:[0-9][0-9]*:Copyright (C) 2022 Strudel contributors - see <https://codeberg\.org/uzu/strudel/" \
     || true)
   [ -z "$hits" ] || { echo "$hits"; exit 1; }
 '

@@ -12,10 +12,14 @@ the CLI's `eval`/`render`/`midi` subcommands (asserted on real output
 content, not just a zero exit status), the `play` → SuperDirt OSC path, all
 nine tutorial templates, and the rebrand check for leftover Strudel
 dependencies/import paths. Every gate asserts on content; none can pass
-vacuously. See the comments in `scripts/check.sh` for what each gate checks
-and why, including the specific bugs it was built to catch (a vacuously
-passing `eval` gate, a `make wasm` target that swallows a failed build, and
-a stale import path in a generated-parser source file).
+vacuously. The two gates that delegate to `go test -run` grep the `-v` output
+for the named test's own `--- PASS:` line, because `go test -run` prints
+"no tests to run" and exits **0** when the pattern matches nothing — a
+renamed or deleted test would otherwise turn its gate green forever. See the
+comments in `scripts/check.sh` for what each gate checks and why, including
+the specific bugs it was built to catch (a vacuously passing `eval` gate, a
+`make wasm` target that swallows a failed build, and a stale import path in a
+generated-parser source file).
 
 ## Manual gates
 
