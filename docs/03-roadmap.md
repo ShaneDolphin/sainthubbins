@@ -55,6 +55,22 @@ evaluator that doesn't exist.
   value is the literal string `s("bd sd")`.
 - **Plan:** `docs/superpowers/plans/2026-08-24-text-evaluator.md`
 
+### WASM build target — decided, do not re-litigate
+
+`make wasm` builds `web/static/saint-hubbins.wasm`, but the live console
+never loaded it — it calls `/api/evaluate` over HTTP. Decision: **keep
+building the target, stop advertising it in the console.** The console
+footer and package comment in `web/server.go` no longer claim a WASM
+bridge; `docs/tutorial/08-limitations.md` states plainly that the console
+uses HTTP by choice. Wiring WASM into the console (loading `wasm_exec.js`
+and calling `saintHubbins.queryPattern` from the browser) was rejected: it
+is real front-end work outside this plan and would create a second
+evaluation path that must stay in sync with the Go one. Deleting the
+target was also rejected: it costs nothing to keep and preserves embedding
+the engine in a page as a future option. Revisit only if the console grows
+enough that HTTP round-trip latency becomes a real problem — that is the
+condition that would change this answer.
+
 ### Repo hygiene
 
 This file has just been rewritten to remove the vacuous gate described

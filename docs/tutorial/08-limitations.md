@@ -97,11 +97,16 @@ works, and it means "tempo" and "play this pattern faster" are the same
 operation. Applying `FastF` to one layer changes that layer's rhythm rather than
 the song's tempo.
 
-## The WASM build is not wired to the console
+## The WASM build is for embedders, not the console
 
-`make wasm` produces `web/static/saint-hubbins.wasm`, and the console footer
-mentions it, but the page never loads it — the console calls the Go server over
-HTTP instead. The WASM target builds and is unused.
+`make wasm` produces `web/static/saint-hubbins.wasm`, served at
+`/static/saint-hubbins.wasm` for anyone embedding the engine in their own
+page. The live console does not load it: the console's JavaScript calls
+`POST /api/evaluate` over HTTP against the running Go server, the same as
+`curl` would. This is a deliberate choice, not an oversight — the console is
+one Go binary talking HTTP to itself, with no second (WASM) evaluation path
+to keep in sync with the first. Nothing in this repository loads the WASM
+binary today; it exists only as a build target for embedding scenarios.
 
 ## What is solid
 

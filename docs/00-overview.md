@@ -6,7 +6,7 @@ Saint Hubbins is a **Go-native live-coding music environment**. Patterns are pur
 
 - **Module**: `codeberg.org/uzu/saint-hubbins`, Go 1.25
 - **CLI**: `saint-hubbins` (alias `hubbins`) — `eval`, `serve`, `render`, `query`
-- **Live console**: Go HTTP server at `http://localhost:8080` (`web/server.go`, `web/templates/console.html`, `web/static/saint-hubbins.wasm`)
+- **Live console**: Go HTTP server at `http://localhost:8080` (`web/server.go`, `web/templates/console.html`), talking to itself over HTTP — see below
 - **License**: AGPL-3.0-or-later
 
 ## Goals
@@ -17,8 +17,8 @@ Not a port of any single JS framework — Saint Hubbins reimagines the pattern m
 
 ## Two Execution Targets
 
-1. **Native Go binary** — CLI `saint-hubbins` evaluates patterns, renders audio offline, and serves the live console over HTTP.
-2. **WASM + Go server** — Pattern engine compiled to WASM (`GOOS=js GOARCH=wasm`) for the browser console. Go serves `saint-hubbins.wasm`.
+1. **Native Go binary** — CLI `saint-hubbins` evaluates patterns, renders audio offline, and serves the live console over HTTP. The console's own JavaScript calls `POST /api/evaluate` — it does not load WASM.
+2. **WASM build** — the pattern engine also compiles to WASM (`GOOS=js GOARCH=wasm`, `make wasm`) as a target for embedding the engine in someone else's page; Go serves the artifact at `/static/saint-hubbins.wasm`. This is a deliberate, separate target — see `docs/tutorial/08-limitations.md`.
 
 ## Constraints
 

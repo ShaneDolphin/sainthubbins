@@ -1,5 +1,6 @@
 // Copyright (C) 2026 Saint Hubbins contributors — AGPL-3.0-or-later
-// Saint Hubbins live console server — HTTP + WASM bridge.
+// Saint Hubbins live console server — HTTP console; also serves the WASM
+// build as a static file for embedders (the console itself does not load it).
 
 package web
 
@@ -40,7 +41,7 @@ Layering, controls and transforms (gain, cutoff, every, jux&hellip;) are the Go 
 <button onclick="evaluate()">Evaluate</button>
 <button onclick="hush()">Hush</button>
 <div id="output"></div>
-<footer><em>Stonehenge — 18" edition</em> &mdash; Saint Hubbins live console (WASM bridge: <code>saintHubbins.queryPattern</code> &rarr; <code>saint-hubbins.wasm</code>)</footer>
+<footer><em>Stonehenge — 18" edition</em> &mdash; Saint Hubbins live console (talks to <code>/api/evaluate</code> over HTTP)</footer>
 <script>
 async function evaluate(){
   const code=document.getElementById('editor').value;
