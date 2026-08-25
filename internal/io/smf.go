@@ -3,7 +3,10 @@
 
 package io
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"sort"
+)
 
 // TimedEvent is a raw MIDI message at an absolute tick.
 type TimedEvent struct {
@@ -33,12 +36,22 @@ func writeVLQ(v uint32) []byte {
 	return out
 }
 
-// EncodeSMF writes a format-0 single-track file. Events must be sorted by tick;
-// deltas are derived from the gaps between them.
+// EncodeSMF writes a format-0 single-track file. It sorts events by tick and
+// produces them in ascending order; deltas are derived from the gaps between them.
+// The caller's slice is not modified.
 func EncodeSMF(ticksPerQuarter int, events []TimedEvent) []byte {
+	// Copy to avoid mutating the caller's slice.
+	sorted := make([]TimedEvent, len(events))
+	copy(sorted, events)
+
+	// Sort by tick, preserving order of simultaneous events.
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Tick < sorted[j].Tick
+	})
+
 	var track []byte
 	var last uint32
-	for _, e := range events {
+	for _, e := range sorted {
 		delta := e.Tick - last
 		last = e.Tick
 		track = append(track, writeVLQ(delta)...)
