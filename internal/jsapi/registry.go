@@ -49,11 +49,14 @@ var controls = map[string]func(any) core.Pattern{
 //     createParam (internal/core/controls.go) takes a raw value and does
 //     its own Pure(buildBag(value)) wrapping, and pre-wrapping here would
 //     instead reach createParam's *Pattern* branch (Fmap over an existing
-//     Pattern) — a different code path that happens to build the same
-//     shape of bag for a plain scalar, but only by coincidence; the two
-//     branches genuinely disagree for a multi-value bag (see buildBag's
-//     array/`{value: ...}` handling), so keeping a bare number unwrapped
-//     here is the correct behaviour, not just the simpler one.
+//     Pattern) — a different code path that builds the same bag for every
+//     input this function actually admits. Measured: Gain(0.5) vs
+//     Gain(Pure(0.5)), and the array and {value: ...} bag forms, all produce
+//     byte-identical haps. buildBag's array handling would diverge, but
+//     arrays are not an accepted case here, so that divergence is currently
+//     unreachable. The flag stays because the two callers need different
+//     *return types* — a Pattern for a []core.Pattern slice, a raw value for
+//     createParam — not because their outputs differ.
 //
 // Anything that isn't a wrapped pattern, a string, or an accepted number —
 // null, undefined, a plain object, a function, a boolean — is rejected
@@ -99,7 +102,17 @@ func toPattern(v any) (core.Pattern, bool) {
 	if !ok {
 		return core.Silence(), false
 	}
-	return p.(core.Pattern), true
+	// Checked, not asserted. Both callers pass wrapNumberAsPure=true, so this
+	// always holds today — but nothing in the type system says it must, and
+	// a future coerceJSValue(v, true, false) here would return a bare float.
+	// A bare type assertion on that panics inside the goja VM as a non-goja
+	// error, which goja re-panics rather than converting: it takes the host
+	// process down instead of failing one call.
+	pat, isPattern := p.(core.Pattern)
+	if !isPattern {
+		return core.Silence(), false
+	}
+	return pat, true
 }
 
 // toPatternResult coerces a value a JS caller *returned* — Evaluate's
@@ -114,7 +127,12 @@ func toPatternResult(v any) (core.Pattern, bool) {
 	if !ok {
 		return core.Silence(), false
 	}
-	return p.(core.Pattern), true
+	// Checked rather than asserted, for the reason given in toPattern.
+	pat, isPattern := p.(core.Pattern)
+	if !isPattern {
+		return core.Silence(), false
+	}
+	return pat, true
 }
 
 // toControlValue coerces a JS-exported value into the argument a control
