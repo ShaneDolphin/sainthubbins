@@ -319,7 +319,7 @@ Go/
     draw/             # Pianoroll, Spiral, pitch wheel, animation
     tonal/            # Scale / Chord / Voicing / Transpose
     session/          # live session (evaluation + scheduler)
-  tools/gen-controls/ # generated controls_gen.go; cannot re-run today (see CLAUDE.md)
+  tools/gen-controls/ # generated controls_gen.go; cannot re-run (needs a js/ tree not shipped here)
   go.mod              # module codeberg.org/uzu/saint-hubbins, go 1.25, github.com/dop251/goja
   Makefile
   LICENSE             # AGPL-3.0-or-later

@@ -31,8 +31,8 @@ replicate, `%n` polymeter, and `Add` on control bags) are fixed. The
 tutorial's former "Mini-notation differences from Strudel" table is gone —
 `grep -rn "Mini-notation differences" docs/tutorial/` returns nothing.
 
-**Repo hygiene, shipped:** this file, `docs/05-execution-checklist.md`,
-`scripts/check.sh` and `CLAUDE.md` were rewritten together to remove the
+**Repo hygiene, shipped:** this file, `docs/05-execution-checklist.md` and
+`scripts/check.sh` were rewritten together to remove the
 vacuous gate described under "Text evaluator" below and to give the repo one
 runnable entry point instead of a checklist a human ticks. `./scripts/check.sh`
 exits 0 with all nine gates passing, and each gate asserts on output content

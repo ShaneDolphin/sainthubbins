@@ -49,3 +49,6 @@ Thumbs.db
 tmp/
 .tmp/
 vendor/
+
+# Agent conventions file — local only
+CLAUDE.md
