@@ -3,7 +3,9 @@
 package jsapi
 
 import (
+	"sync"
 	"testing"
+	"time"
 
 	"codeberg.org/uzu/saint-hubbins/internal/core"
 )
@@ -26,12 +28,22 @@ func TestEvaluateSoundConstructor(t *testing.T) {
 	if len(vals) != 2 {
 		t.Fatalf("got %d haps, want 2", len(vals))
 	}
-	m, ok := vals[0].(map[string]any)
+	m0, ok := vals[0].(map[string]any)
 	if !ok {
-		t.Fatalf("value is %T, want a control bag", vals[0])
+		t.Fatalf("vals[0] is %T, want a control bag", vals[0])
 	}
-	if m["s"] != "bd" {
-		t.Errorf("s = %v, want bd", m["s"])
+	if m0["s"] != "bd" {
+		t.Errorf("vals[0][\"s\"] = %v, want bd", m0["s"])
+	}
+	// The claim is about both haps of the sequence, not just the first — a
+	// pattern that duplicated "bd" instead of sequencing in "sd" must fail
+	// here, not slip through on a presence-only check.
+	m1, ok := vals[1].(map[string]any)
+	if !ok {
+		t.Fatalf("vals[1] is %T, want a control bag", vals[1])
+	}
+	if m1["s"] != "sd" {
+		t.Errorf("vals[1][\"s\"] = %v, want sd", m1["s"])
 	}
 }
 
@@ -48,5 +60,58 @@ func TestEvaluateReportsErrors(t *testing.T) {
 func TestEvaluateRejectsNonPatternResult(t *testing.T) {
 	if _, err := Evaluate(`42`); err == nil {
 		t.Fatal("want an error when the result is not a pattern")
+	}
+}
+
+// Every Evaluate call registers the mini-notation string-parser hook
+// (core.SetStringParser), a package-level var in internal/core shared by
+// every caller. Run enough concurrent evaluations, with a mix of code paths
+// that both write and read that hook, to give the race detector a real
+// chance to see an unsynchronized access if one exists.
+func TestEvaluateConcurrent(t *testing.T) {
+	const n = 20
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			code := `s("bd sd")`
+			if i%2 == 0 {
+				// Exercises Reify's read of the string-parser hook directly,
+				// not just through the s() constructor.
+				code = `"bd sd"`
+			}
+			_, err := Evaluate(code)
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: Evaluate: %v", i, err)
+		}
+	}
+}
+
+// A script that never returns must not hang the calling goroutine forever —
+// it must be interrupted and reported as an error.
+func TestEvaluateInterruptsRunawayScript(t *testing.T) {
+	start := time.Now()
+	_, err := Evaluate(`while (true) {}`)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("want an error from a runaway script, got nil")
+	}
+	// A near-instant error would mean something other than the interrupt
+	// path fired (e.g. a parse error) — confirm we actually waited out
+	// something close to the timeout rather than failing for a different
+	// reason entirely.
+	if elapsed < evaluateTimeout-500*time.Millisecond {
+		t.Fatalf("Evaluate returned after %s, want it to wait close to the %s timeout", elapsed, evaluateTimeout)
+	}
+	if elapsed > evaluateTimeout+5*time.Second {
+		t.Fatalf("Evaluate took %s, want it to return promptly after the %s timeout", elapsed, evaluateTimeout)
 	}
 }

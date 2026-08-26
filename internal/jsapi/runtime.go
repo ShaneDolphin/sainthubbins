@@ -4,7 +4,9 @@
 package jsapi
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dop251/goja"
 
@@ -12,19 +14,42 @@ import (
 	"codeberg.org/uzu/saint-hubbins/internal/mini"
 )
 
+// evaluateTimeout bounds how long a single Evaluate call may run JS before
+// it is interrupted. Runaway code — an infinite loop, a pattern that never
+// stops recursing — would otherwise hang the calling goroutine forever;
+// under Task 4 that goroutine is a web request handler, so a hang there
+// becomes a downed console rather than just a stuck test. A package-level
+// constant keeps the default in one place and tunable if it proves wrong.
+const evaluateTimeout = 5 * time.Second
+
 // Evaluate runs code in a fresh VM and returns the pattern it produced.
 //
-// A fresh runtime per call keeps this safe under the web console's concurrent
-// requests — goja runtimes are not goroutine-safe — and costs little next to
-// pattern querying.
+// A fresh runtime per call keeps the goja VM itself safe under the web
+// console's concurrent requests — goja runtimes are not goroutine-safe. The
+// mini-notation string-parser hook registered below is a separate, package
+// -level piece of shared state (see core.SetStringParser); it is guarded by
+// its own mutex, so concurrent Evaluate calls are safe on that count too.
+//
+// A timer interrupts the VM after evaluateTimeout so JS that never returns
+// (`while(true){}`) cannot hang the calling goroutine indefinitely.
 func Evaluate(code string) (core.Pattern, error) {
 	mini.RegisterStringParser()
 	vm := goja.New()
 	if err := register(vm); err != nil {
 		return core.Silence(), err
 	}
+
+	timer := time.AfterFunc(evaluateTimeout, func() {
+		vm.Interrupt(fmt.Sprintf("jsapi: evaluation exceeded %s", evaluateTimeout))
+	})
+	defer timer.Stop()
+
 	v, err := vm.RunString(code)
 	if err != nil {
+		var interrupted *goja.InterruptedError
+		if errors.As(err, &interrupted) {
+			return core.Silence(), fmt.Errorf("jsapi: %v", interrupted.Value())
+		}
 		return core.Silence(), fmt.Errorf("jsapi: %w", err)
 	}
 	return unwrap(vm, v)

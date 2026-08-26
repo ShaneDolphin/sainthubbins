@@ -7,14 +7,38 @@ package core
 import (
 	"fmt"
 	"sort"
+	"sync"
 )
 
 // Global steps flag (mirrors JS __steps) and string parser hook.
 var stepsEnabled = true
-var stringParser func(string) Pattern
+
+// stringParser and stringParserMu guard the hook set by SetStringParser.
+// Multiple goroutines evaluate patterns concurrently (the web console's
+// /api/evaluate calls jsapi.Evaluate per request, each of which registers
+// this hook), so both the write in SetStringParser and the read in Reify
+// must go through the same mutex.
+var (
+	stringParserMu sync.RWMutex
+	stringParser   func(string) Pattern
+)
 
 func CalculateSteps(v bool) { stepsEnabled = v }
-func SetStringParser(p func(string) Pattern) { stringParser = p }
+
+func SetStringParser(p func(string) Pattern) {
+	stringParserMu.Lock()
+	stringParser = p
+	stringParserMu.Unlock()
+}
+
+// getStringParser returns the currently registered hook, or nil. Every read
+// of stringParser (Reify below, and evaluate.go) must go through this rather
+// than touching the package var directly.
+func getStringParser() func(string) Pattern {
+	stringParserMu.RLock()
+	defer stringParserMu.RUnlock()
+	return stringParser
+}
 
 // Pattern is the core type: a function from State to []Hap, with optional steps metadata.
 type Pattern struct {
@@ -90,9 +114,9 @@ func Reify(thing any) Pattern {
 			return *p
 		}
 	}
-	if stringParser != nil {
-		if s, ok := thing.(string); ok {
-			return stringParser(s)
+	if s, ok := thing.(string); ok {
+		if p := getStringParser(); p != nil {
+			return p(s)
 		}
 	}
 	return Pure(thing)
