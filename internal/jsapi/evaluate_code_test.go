@@ -60,3 +60,50 @@ func TestEvaluateCodeReportsErrorForBadMethod(t *testing.T) {
 		t.Errorf("error %q should mention the offending method", err.Error())
 	}
 }
+
+// TestMiniNotationCorpusSurvivesTheFallback locks hapsLookGenuine's charset
+// against the mini grammar it claims to mirror.
+//
+// hapsLookGenuine decides "did mini really parse this, or just echo the
+// source back at me" from the characters in a hap's string value, and it
+// tracks internal/mini's step_char set by doc comment only — nothing fails
+// if the grammar grows a character the classifier does not know about. The
+// symptom would be nasty and narrow: one mini form starts reporting a
+// JavaScript syntax error instead of playing, while every other form and
+// every gate stays green.
+//
+// So drive real mini-notation through the real fallback. Each of these is
+// invalid JavaScript, so each one reaches mini only by failing JS first.
+func TestMiniNotationCorpusSurvivesTheFallback(t *testing.T) {
+	corpus := []string{
+		"bd sd", "bd*2 sd", "bd:3 sd:1", "<bd sd> hh", "[bd sd] hh",
+		"bd(3,8)", "bd . sd hh", "bd? sd", "bd!2 sd", "bd@3 sd",
+		"~ bd", "bd,hh*4", "{bd sd, hh hh hh}", "bd [sd [hh hh]]",
+		"c#4 eb3", "bd_sd", "bd.sd", "bd^2",
+	}
+	for _, src := range corpus {
+		t.Run(src, func(t *testing.T) {
+			pat, err := EvaluateCode(src)
+			if err != nil {
+				t.Fatalf("mini-notation %q reported a JS error: %v", src, err)
+			}
+			haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+			if len(haps) == 0 {
+				t.Fatalf("mini-notation %q produced no haps", src)
+			}
+			// The echo signature this guard exists to catch: one hap whose
+			// value is the source text handed straight back.
+			//
+			// Only meaningful for sources that cannot legitimately BE one
+			// atom. "bd.sd" and "bd^2" are single atoms — . and ^ are both
+			// step_chars — so value == source is the correct parse there,
+			// not an echo. Checking those too is how this assertion first
+			// failed against perfectly good code.
+			if len(haps) == 1 && strings.ContainsAny(src, " []<>{},") {
+				if s, ok := haps[0].Value.(string); ok && s == src {
+					t.Errorf("%q came back as a literal-source hap, not a parse", src)
+				}
+			}
+		})
+	}
+}
