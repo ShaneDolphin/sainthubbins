@@ -22,6 +22,24 @@ var controls = map[string]func(any) core.Pattern{
 	"attack": core.Attack, "release": core.Release, "shape": core.Shape,
 }
 
+// variadic are the combinators that combine multiple pattern arguments into
+// one. cat is an alias for slowcat (core.Cat already just calls SlowCat);
+// sequence is an alias for fastcat (core.Sequence already just calls
+// FastCat) — both are exposed under both names because both spellings are
+// how this vocabulary is normally written.
+//
+// Package-level (not local to register, as it originally was) so
+// evaluate_code.go's callsRegisteredGlobal can name-check against the same
+// table register binds into the VM, rather than a second hand-copied list
+// that could drift from it.
+var variadic = map[string]func(...core.Pattern) core.Pattern{
+	"stack":    core.Stack,
+	"cat":      core.Cat,
+	"slowcat":  core.SlowCat,
+	"fastcat":  core.FastCat,
+	"sequence": core.Sequence,
+}
+
 // coerceJSValue is the single place a JS-exported value is classified,
 // for every position in this file that turns one into either a Pattern or
 // a control constructor's argument. A wrapped pattern always becomes its
@@ -194,12 +212,6 @@ func register(vm *goja.Runtime) error {
 		}
 	}
 
-	// Variadic combinators combine multiple pattern arguments into one.
-	// cat is an alias for slowcat (core.Cat already just calls SlowCat);
-	// sequence is an alias for fastcat (core.Sequence already just calls
-	// FastCat) — both are exposed under both names because both spellings
-	// are how this vocabulary is normally written.
-	//
 	// Every argument goes through toPattern, which reports ok=false for
 	// anything that isn't a wrapped pattern, a mini-notation string, or a
 	// number. That's deliberate, not incidental: a variadic pattern

@@ -179,3 +179,64 @@ func TestMiniNotationCorpusSurvivesTheFallback(t *testing.T) {
 		})
 	}
 }
+
+// TestCallToBoundGlobalIsAnError covers the review's sharpest finding:
+// mini's euclid branch ("(" handling in internal/mini/mini.go's parseToken)
+// splits the text inside the parens on "," WITHOUT tracking bracket depth,
+// unlike every other comma-splitter in that file. So a comma-separated JS
+// call to one of this API's own bound globals — a control, a variadic
+// combinator, or mini/silence — reads as euclid(name, pulses=0, steps=0):
+// Atoi fails on both non-numeric halves, producing a real zero-hap Pattern
+// rather than falling through to the literal-word echo hapsLookGenuine
+// would catch. Before this fix, all of these silently "evaluated" to zero
+// haps and exit 0 — including the console's own default snippet with the
+// quotes forgotten.
+func TestCallToBoundGlobalIsAnError(t *testing.T) {
+	for _, src := range []string{
+		`stack(s(bd*4), s(hh*8).gain(0.4))`,
+		`stack(bd, sd)`,
+		`cat(bd*2, sd*2)`,
+		`note(c3, e3)`,
+		`sequence(bd, sd)`,
+	} {
+		t.Run(src, func(t *testing.T) {
+			if _, err := EvaluateCode(src); err == nil {
+				t.Errorf("EvaluateCode(%q) = nil error, want the JS error — %q is a call to one of this API's own bound globals, not a euclid rhythm", src, src)
+			}
+		})
+	}
+}
+
+// TestCallToBoundGlobalGuardDoesNotOverreach guards against
+// TestCallToBoundGlobalIsAnError's fix rejecting the euclid syntax it must
+// not touch: "bd" and "foo" are not bound globals, so bd(3,8), bd(0,8),
+// the alternation form, and an arbitrary unbound name must all keep
+// working exactly as before.
+func TestCallToBoundGlobalGuardDoesNotOverreach(t *testing.T) {
+	cases := []struct {
+		src      string
+		wantHaps int
+	}{
+		{"bd(3,8)", 3},
+		{"bd(0,8)", 0},
+		{"foo(1,2)", 1},
+	}
+	for _, c := range cases {
+		t.Run(c.src, func(t *testing.T) {
+			pat, err := EvaluateCode(c.src)
+			if err != nil {
+				t.Fatalf("EvaluateCode(%q): %v", c.src, err)
+			}
+			haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+			if len(haps) != c.wantHaps {
+				t.Errorf("got %d haps, want %d", len(haps), c.wantHaps)
+			}
+		})
+	}
+	// <~ bd(3,8)> is empty on cycle 0 specifically (the alternation picks
+	// "~"), so it exercises the zero-hap path with a bound-global-free
+	// euclid call nested inside it — must still be accepted as silence.
+	if _, err := EvaluateCode("<~ bd(3,8)>"); err != nil {
+		t.Errorf(`EvaluateCode("<~ bd(3,8)>") = %v, want a silent pattern`, err)
+	}
+}

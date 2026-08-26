@@ -62,7 +62,7 @@ func EvaluateCode(code string) (core.Pattern, error) {
 				if hapsLookGenuine(haps) {
 					return m, nil
 				}
-			} else if looksLikeMiniSource(strings.TrimSpace(code)) {
+			} else if trimmed := strings.TrimSpace(code); looksLikeMiniSource(trimmed) && !callsRegisteredGlobal(trimmed) {
 				return m, nil
 			}
 		}
@@ -199,4 +199,75 @@ func looksLikeMiniSource(code string) bool {
 		return false
 	}
 	return true
+}
+
+// callsRegisteredGlobal reports whether code contains an identifier
+// immediately followed by "(" that names one of this API's own bound
+// globals \u2014 a control (registry.go's `controls`), a variadic combinator
+// (`variadic`), or one of the two standalone functions `mini`/`silence`.
+//
+// looksLikeMiniSource widening to accept "(" and ")" (op_bjorklund, bd(3,8))
+// opened exactly this hole: mini's euclid branch splits the text between
+// the parens on "," WITHOUT tracking bracket depth (internal/mini/mini.go's
+// parseToken, the `strings.Split(inside, ",")` in its "(" handling \u2014 every
+// other comma-splitter in that file uses the depth-aware splitAtDepth0).
+// So `stack(s(bd*4), s(hh*8).gain(0.4))` \u2014 the console's own default
+// snippet with the quotes forgotten \u2014 reads as euclid("stack", pulses=0,
+// steps=0) because Atoi fails on both non-numeric halves, which is a valid
+// Pattern that happens to produce zero haps forever. hapsLookGenuine never
+// runs (there's nothing to check), and looksLikeMiniSource accepts the
+// source because every character in it \u2014 letters, "( ) * ," and space \u2014 is
+// legitimately part of mini's grammar. `stack(bd, sd)`, `cat(...)`,
+// `note(...)` and `sequence(...)` all fail the identical way.
+//
+// This is the same "our own name is not a sample name" test
+// valueLooksGenuine already applies to the colon form ("gain:0.5"), applied
+// here to the call form instead: no real mini-notation pattern is a euclid
+// rhythm gated on a sample named "stack" or "note" \u2014 those are this API's
+// own names for something else entirely. `bd(3,8)` and `foo(1,2)` are
+// unaffected, since neither "bd" nor "foo" is a bound global.
+func callsRegisteredGlobal(code string) bool {
+	runes := []rune(code)
+	for i := 0; i < len(runes); {
+		if !isJSIdentStart(runes[i]) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(runes) && isJSIdentPart(runes[i]) {
+			i++
+		}
+		if i < len(runes) && runes[i] == '(' && isBoundGlobalName(string(runes[start:i])) {
+			return true
+		}
+	}
+	return false
+}
+
+// isBoundGlobalName reports whether name is bound directly into the JS
+// global scope by register() (registry.go): a control, a variadic
+// combinator, or one of the two standalone functions mini/silence.
+func isBoundGlobalName(name string) bool {
+	if _, ok := controls[name]; ok {
+		return true
+	}
+	if _, ok := variadic[name]; ok {
+		return true
+	}
+	return name == "mini" || name == "silence"
+}
+
+// isJSIdentStart and isJSIdentPart approximate JS identifier syntax closely
+// enough for callsRegisteredGlobal's purpose \u2014 finding a run of characters
+// that could be one of a small, known list of ASCII names \u2014 without
+// needing the real grammar. Unicode letters are included because
+// unicode.IsLetter already is elsewhere in this file (isMiniStepChar); no
+// bound global name uses one, so it never changes the answer, only the
+// scan.
+func isJSIdentStart(r rune) bool {
+	return unicode.IsLetter(r) || r == '_' || r == '$'
+}
+
+func isJSIdentPart(r rune) bool {
+	return isJSIdentStart(r) || unicode.IsDigit(r)
 }
