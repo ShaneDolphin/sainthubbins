@@ -224,13 +224,6 @@ func register(vm *goja.Runtime) error {
 	// Silence(), which is a coherent "combine nothing" identity, not a
 	// caller mistake — so an empty argument list is passed straight
 	// through rather than rejected.
-	variadic := map[string]func(...core.Pattern) core.Pattern{
-		"stack":    core.Stack,
-		"cat":      core.Cat,
-		"slowcat":  core.SlowCat,
-		"fastcat":  core.FastCat,
-		"sequence": core.Sequence,
-	}
 	for name, fn := range variadic {
 		name, fn := name, fn
 		if err := vm.Set(name, func(call goja.FunctionCall) goja.Value {
@@ -586,7 +579,24 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 			// option regardless of which of those two cases applies: a
 			// broken per-cycle transform shows up as an audible dropout in
 			// the rendered cycle, not as a subtly wrong or duplicated one.
+			//
+			// This call also needs its own interrupt timer, separate from
+			// the one Evaluate already armed around vm.RunString. That
+			// timer is long gone by the time a query reaches this callback
+			// — it stopped when Evaluate returned, back when the pattern
+			// was only just being built — so an infinite loop written
+			// inside the callback itself (`every(2, x => { while(true){} })`)
+			// runs with no interrupt armed and never returns: confirmed by
+			// leaving a real test process running past 15s on exactly that
+			// input, permanently leaking the goroutine and pinning a core,
+			// remotely triggerable through /api/evaluate. armInterruptTimeout
+			// (runtime.go) gives this specific invocation its own deadline,
+			// and its returned stop function clears the interrupt flag
+			// afterward so a fired-but-late timer can't bleed into the next
+			// cycle's invocation of this same callback on this same vm.
+			stop := armInterruptTimeout(vm, "every callback")
 			res, err := fn(goja.Undefined(), vm.ToValue(newJSPattern(vm, p)))
+			stop()
 			if err != nil {
 				return core.Silence()
 			}

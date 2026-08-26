@@ -122,3 +122,67 @@ func TestEvaluateInterruptsRunawayScript(t *testing.T) {
 		t.Errorf("error = %q, want %q", err.Error(), want)
 	}
 }
+
+// TestEveryCallbackInfiniteLoopIsInterrupted covers a hang Evaluate's own
+// timer cannot see: an every()/off()-style callback runs at query time,
+// long after Evaluate has returned and its timer has already stopped, so
+// an infinite loop written inside the callback itself needs its own
+// interrupt armed independently. Before that, this exact input ran past
+// 15s in a real process (measured with a bounded runner) while a bare
+// top-level `while(true){}` already returned by 6s — confirming the two
+// hangs were not caught by the same mechanism.
+func TestEveryCallbackInfiniteLoopIsInterrupted(t *testing.T) {
+	// The callback hangs only on its first invocation (cycle 0) and behaves
+	// normally on its second (cycle 2 — every(2, ...) matches Mod(cycle,2)
+	// == 0). This is what lets the test distinguish "the stale interrupt
+	// from cycle 0's timeout bled into cycle 2" from "it didn't": without
+	// vm.ClearInterrupt() (armInterruptTimeout, runtime.go), goja queues an
+	// Interrupt() called while not running and fires it on the very next
+	// JS call into this vm — so cycle 2's otherwise-normal invocation would
+	// itself immediately report an interrupted error and fall back to
+	// Silence, indistinguishable from cycle 0's real timeout except by
+	// timing. Checking cycle 2's haps, not just its speed, is what actually
+	// proves the interrupt was cleared rather than never having reached it.
+	pat, err := Evaluate(`
+		let n = 0;
+		s("bd*4").every(2, x => {
+			n++;
+			if (n === 1) { while (true) {} }
+			return x;
+		})
+	`)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+
+	start := time.Now()
+	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	elapsed := time.Since(start)
+
+	if elapsed < evaluateTimeout-500*time.Millisecond {
+		t.Fatalf("query returned after %s, want it to wait close to the %s per-callback timeout", elapsed, evaluateTimeout)
+	}
+	if elapsed > evaluateTimeout+5*time.Second {
+		t.Fatalf("query took %s, want it to return promptly after the %s per-callback timeout", elapsed, evaluateTimeout)
+	}
+	// The interrupted callback falls back to Silence — the same fallback a
+	// callback error already uses (registry.go) — so this cycle simply
+	// produces no haps rather than hanging or crashing the process.
+	if len(haps) != 0 {
+		t.Errorf("got %d haps from an interrupted callback cycle, want 0 (Silence fallback)", len(haps))
+	}
+
+	// Cycle 2 re-enters the SAME callback on the SAME vm, this time
+	// returning normally and promptly. A stale, uncleared interrupt would
+	// make this cycle fail exactly like cycle 0 did — near-instantly,
+	// rather than hanging, but still zero haps.
+	start = time.Now()
+	haps = pat.QueryArc(core.FractionFromInt(2), core.FractionFromInt(3))
+	elapsed = time.Since(start)
+	if elapsed > time.Second {
+		t.Fatalf("cycle 2 query took %s, want near-instant — its callback does not loop", elapsed)
+	}
+	if len(haps) != 4 {
+		t.Fatalf("got %d haps on cycle 2, want 4 — a stale interrupt from cycle 0's timeout would zero this out too", len(haps))
+	}
+}
