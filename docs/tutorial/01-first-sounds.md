@@ -32,8 +32,9 @@ and `serve` for the browser console.
 
 ## Look at a pattern
 
-`eval` takes a mini-notation string and prints the events it produces over one
-cycle:
+`eval` takes a pattern and prints the events it produces over one cycle. The
+simplest thing to hand it is a mini-notation string — the rhythm language of
+[chapter 2](02-mini-notation.md):
 
 ```console
 $ go run ./cmd/saint-hubbins eval "bd sd"
@@ -124,7 +125,13 @@ hear nothing, that is almost always why.
 One trap worth knowing before you type a pattern like `"0 1 2 3"`: a bare
 number in mini-notation is stored as a string, so `play` sends it as a
 **sample name** (`s "0"`), not a note number. For a sample index use `bd:3`
-syntax; for real note numbers, build the pattern in Go with `core.N` instead.
+syntax; for real note numbers, name the control — `play 'n("0 1 2 3")'`, or
+`core.N` in Go.
+
+That `n(...)` is the other thing `eval`, `render` and `play` accept: JS pattern
+code, tried before the mini-notation parser. `s("bd sd").fast(2)` and
+`stack(...)` work anywhere a pattern string does. [Chapter 7](07-new-song-web.md)
+has the whole vocabulary; for now, mini-notation is enough.
 
 ## Next
 

@@ -1,17 +1,70 @@
 # 3. Patterns in Go
 
 Mini-notation gives you one rhythm. A song is several rhythms at once, at a
-chosen tempo, with the parts at different volumes. That is Go.
+chosen tempo, with the parts at different volumes.
 
-## Why the split exists
+That used to be the whole reason for this chapter: layering, volume and tempo
+were Go and nothing else. They are not any more —
+`stack(s("bd*4"), s("hh*8").gain(0.4))` is something you can type at `eval`, at
+`render`, or into the console. So the honest question is no longer "why can't I
+type this?" but "where does typing stop being enough?"
 
-The `eval` command hands your string to the mini-notation parser and prints the
-result. There is no interpreter for method calls, so `s("bd sd")` is not code —
-it is just text the parser does not recognise, and you get an event whose value
-is the string `s("bd sd")`.
+## Where the line is now
 
-Everything beyond rhythm is the Go API. In practice you write mini-notation
-*inside* Go calls, and the two fit together in one line:
+Two things are true at once, and the tutorial is clearer if you hold both.
+
+**Text reaches further than it used to.** The same pattern vocabulary is bound
+into a JavaScript evaluator (`internal/jsapi`), so the shapes that matter for
+sketching — sounds, pitch, a dozen controls, layering, and fourteen transforms —
+have a text spelling. That is [chapter 7](07-new-song-web.md#the-text-vocabulary).
+
+**Go is still the whole engine, and text is a window onto part of it.**
+
+| | Text (`eval`, `render`, `play`, console) | Go |
+|---|---|---|
+| Rhythm | mini-notation | mini-notation, same parser |
+| Sound and pitch | `s`, `sound`, `note`, `n` | `core.S`, `core.Note`, `core.N` |
+| Controls | twelve: `gain`, `cutoff`, `lpf`, `pan`, `room`, `speed`, `attack`, `release`, `shape` and the pitch three | every control in the vocabulary |
+| Layering | `stack`, `cat`, `slowcat`, `fastcat`, `sequence` | those, plus `core.Arrange`, and the methods `.Jux()` / `.Superimpose()` |
+| Transforms | fourteen, including `fast`, `slow`, `rev`, `ply`, `euclid`, `every` | the whole transformation core — `Chop`, `Striate`, `Struct`, `Sometimes`, `Off`, `Iter`, `Zoom`, `Compress`, `LastOf`, … |
+| Modulating a control with a signal | — | `core.Sine()`, `core.Saw()`, `core.Perlin()` |
+| Scales, chords, voicings | — | `internal/tonal` |
+| Rendering | `render out.wav '<code>'`, fixed at 4 cycles | `shared.Must(song, "x.wav", bars)`, any length, with the event count and peak reported |
+
+## Why songs are still Go
+
+Three reasons, in order of how often they bite.
+
+**1. A song is a program you keep.** Text is a line you type and lose. A file
+has named parts you can reuse, a comment explaining the bar you always forget,
+and a git history. Every template in this tutorial is a Go file for that reason,
+not because text could not express it.
+
+**2. Tempo is exact in Go and approximate in text.** `.fast()` takes a JS
+number, and a JS number is a float. `core.FractionFromFloat` turns it into the
+exact rational *of that float*, which is not the rational you meant:
+
+```console
+$ go run ./cmd/saint-hubbins eval 's("bd sd").fast(2/3)'
+...
+    "part": "0/1 → 4503599627370496/6004799503160661",
+...
+    "part": "4503599627370496/6004799503160661 → 1/1",
+...
+```
+
+(Only the `part` lines are shown.) That boundary is 3/4, to about sixteen
+digits. `shared.Tempo(128)` is
+`core.NewFraction(128, 120)` — exactly 16/15, no float in the path. Whole
+numbers (`.fast(2)`) are exact either way; it is the ratios that drift.
+
+**3. The vocabulary runs out.** The table above is the map. When you want a
+`Jux`, a `Chop`, a scale, or one of the controls the text layer does not bind,
+you are in Go — and moving there is cheap, because mini-notation goes across
+unchanged, inside the quotes.
+
+In practice you write mini-notation *inside* Go calls, and the two fit together
+in one line — the same nesting the text layer does with `s("bd*4")`:
 
 ```go
 core.S(mini.Mini("bd*4"))

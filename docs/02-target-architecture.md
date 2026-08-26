@@ -18,7 +18,10 @@ Go/
   internal/
     core/             # Fraction, TimeSpan, Hap, State, Pattern, controls, scheduler, evaluate
     mini/             # mini notation parser (pigeon-PEG)
-    transpiler/       # string transform + goja bridge
+    jsapi/            # goja-bound JS pattern API; EvaluateCode resolves user text
+                      #   (JS first, mini-notation fallback) for every caller
+    transpiler/       # string transform + goja bridge — not on the evaluation
+                      #   path; nothing outside the package imports it
     audio/            # webaudio/offline renderer
     draw/             # pianoroll, spiral, pitch wheel
     session/          # live session (evaluation + scheduler)

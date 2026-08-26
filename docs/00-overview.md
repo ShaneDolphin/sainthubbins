@@ -7,6 +7,7 @@ Saint Hubbins is a **Go-native live-coding music environment**. Patterns are pur
 - **Module**: `codeberg.org/uzu/saint-hubbins`, Go 1.25
 - **CLI**: `saint-hubbins` (alias `hubbins`) — `eval`, `serve`, `render`, `play`, `query`, `midi` (full table in [README](../README.md#cli-reference))
 - **Live console**: Go HTTP server at `http://localhost:8080` (`web/server.go`, page included as an inline Go template), talking to itself over HTTP — see below
+- **Text input**: every command that takes `<code>` resolves it through `internal/jsapi.EvaluateCode` — JS pattern code first, mini-notation as the fallback, an error when it is neither
 - **License**: AGPL-3.0-or-later
 
 ## Goals
@@ -24,7 +25,13 @@ Not a port of any single JS framework — Saint Hubbins reimagines the pattern m
 
 - AGPL-3.0 compliance — `ATTRIBUTION.md` + `LICENSE`.
 - No behavior drift in core query semantics without a migration note.
-- No JS runtime embedded in production.
+- **One** embedded JS runtime, and only as a front end for user input.
+  `github.com/dop251/goja` is the module's single direct dependency; it backs
+  `internal/jsapi`, which parses what a user types and hands back a
+  `core.Pattern`. No engine internals run in JS, and nothing in the query path
+  depends on it. This constraint used to read "no JS runtime embedded in
+  production", which was true before the text evaluator shipped; the point it
+  was protecting — the pattern engine stays pure Go — still holds.
 
 ## See Also
 
