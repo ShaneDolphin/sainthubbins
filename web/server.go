@@ -11,7 +11,7 @@ import (
 	"net/http"
 
 	"codeberg.org/uzu/saint-hubbins/internal/core"
-	"codeberg.org/uzu/saint-hubbins/internal/mini"
+	"codeberg.org/uzu/saint-hubbins/internal/jsapi"
 )
 
 var consoleTemplate = template.Must(template.New("console").Parse(`<!DOCTYPE html>
@@ -33,10 +33,10 @@ footer em{color:#b5a46a}
 </head>
 <body>
 <h1>Saint Hubbins — Live Console</h1>
-<p>Go pattern engine running natively. Type <strong>mini-notation</strong> and press Evaluate to see the events (haps) it produces — these go to eleven.</p>
-<p class="hint">Try: <code>bd sd</code> &middot; <code>bd*4</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
-Layering, controls and transforms (gain, cutoff, every, jux&hellip;) are the Go API — see <code>docs/tutorial/</code>.</p>
-<textarea id="editor">[bd*4, hh*8]</textarea>
+<p>Go pattern engine running natively. Type <strong>JS pattern code</strong> or bare <strong>mini-notation</strong> and press Evaluate to see the events (haps) it produces — these go to eleven.</p>
+<p class="hint">Try: <code>s("bd*4").gain(0.8)</code> &middot; <code>bd*4</code> &middot; <code>bd sd</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
+JS is tried first (stack, cat, every, jux, gain, cutoff&hellip;); text that isn't valid JS but is mini-notation falls back automatically — see <code>docs/tutorial/</code>.</p>
+<textarea id="editor">stack(s("bd*4"), s("hh*8").gain(0.4))</textarea>
 <br>
 <button onclick="evaluate()">Evaluate</button>
 <button onclick="hush()">Hush</button>
@@ -114,16 +114,9 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	var pat core.Pattern
-	mini.RegisterStringParser()
-	code := req.Code
-	if p, _, err := core.Evaluate(code, nil); err == nil {
-		pat = p
-	} else {
-		pat = mini.Mini(code)
-		if pat.Query == nil {
-			pat = core.Pure(code)
-		}
+	pat, err := jsapi.EvaluateCode(req.Code)
+	if err != nil {
+		pat = core.Silence()
 	}
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
 	out := make([]map[string]any, len(haps))
@@ -138,6 +131,9 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		out[i] = m
 	}
 	resp := EvaluateResponse{Haps: out}
+	if err != nil {
+		resp.Error = err.Error()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -153,20 +149,14 @@ func (s *Server) handlePianoroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	mini.RegisterStringParser()
-	code := req.Code
-	var pat core.Pattern
-	if p, _, err := core.Evaluate(code, nil); err == nil {
-		pat = p
-	} else {
-		pat = mini.Mini(code)
-		if pat.Query == nil {
-			pat = core.Pure(code)
-		}
+	pat, err := jsapi.EvaluateCode(req.Code)
+	if err != nil {
+		pat = core.Silence()
 	}
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(2))
 	type Resp struct {
-		Haps []map[string]any `json:"haps"`
+		Haps  []map[string]any `json:"haps"`
+		Error string           `json:"error,omitempty"`
 	}
 	out := make([]map[string]any, len(haps))
 	for i, h := range haps {
@@ -181,9 +171,13 @@ func (s *Server) handlePianoroll(w http.ResponseWriter, r *http.Request) {
 		}
 		out[i] = m
 	}
+	resp := Resp{Haps: out}
+	if err != nil {
+		resp.Error = err.Error()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	_ = json.NewEncoder(w).Encode(Resp{Haps: out})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) Start() error {
