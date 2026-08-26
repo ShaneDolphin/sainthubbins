@@ -114,4 +114,11 @@ func TestEvaluateInterruptsRunawayScript(t *testing.T) {
 	if elapsed > evaluateTimeout+5*time.Second {
 		t.Fatalf("Evaluate took %s, want it to return promptly after the %s timeout", elapsed, evaluateTimeout)
 	}
+	// The interrupt value is already unprefixed and the error branch adds
+	// "jsapi:" once. Assert the whole string so a doubled prefix — which is
+	// what this looked like before — fails here rather than reaching a user.
+	want := "jsapi: evaluation exceeded " + evaluateTimeout.String()
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
 }

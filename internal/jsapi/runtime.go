@@ -40,7 +40,8 @@ func Evaluate(code string) (core.Pattern, error) {
 	}
 
 	timer := time.AfterFunc(evaluateTimeout, func() {
-		vm.Interrupt(fmt.Sprintf("jsapi: evaluation exceeded %s", evaluateTimeout))
+		// No "jsapi:" prefix here — the InterruptedError branch below adds it.
+		vm.Interrupt(fmt.Sprintf("evaluation exceeded %s", evaluateTimeout))
 	})
 	defer timer.Stop()
 
