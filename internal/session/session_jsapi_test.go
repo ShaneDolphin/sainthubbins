@@ -79,9 +79,21 @@ func TestSessionEvaluateReportsJSError(t *testing.T) {
 	}
 
 	// And the Cyclist that's actually driving playback must be on the same
-	// pattern — this is what would catch a fix that updates s.Pattern
-	// correctly but still calls s.Cyclist.SetPattern(core.Silence()) (or
-	// vice versa).
+	// pattern.
+	//
+	// The OnTrigger call below does NOT catch a fix that updates s.Pattern
+	// correctly but still calls s.Cyclist.SetPattern(core.Silence()):
+	// OnTrigger is a plain callback field, invoked by the clock loop after
+	// the Cyclist has already queried its own pattern, so calling it here
+	// with a hap we pulled off s.Pattern never reads Cyclist.Pattern at all.
+	// It exercises sink forwarding, not which pattern the Cyclist holds.
+	// Assert that separately, or the Cyclist half of this test is a claim
+	// with nothing behind it.
+	if cp := s.Cyclist.Pattern; cp == nil ||
+		len((*cp).QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))) != 4 {
+		t.Fatalf("Cyclist pattern was clobbered by a failed Evaluate — the room goes silent on a typo")
+	}
+
 	h := haps[0]
 	s.Cyclist.OnTrigger(h, 0, 0.5, 0.5, float64(time.Now().Unix()))
 	if rec.count() != 1 {

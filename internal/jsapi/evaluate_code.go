@@ -159,22 +159,41 @@ func isSafeMiniAtom(s string) bool {
 // judging the source text instead.
 //
 // This is a best-effort heuristic, not a proof: mini-notation and JS share
-// the same ASCII punctuation, so a JS snippet that (a) fails to evaluate,
-// (b) happens to use only these characters, and (c) happens to parse via
-// mini into zero haps on this cycle would be wrongly accepted as silence
-// rather than reported as a JS error. That triple coincidence is narrow —
-// it excludes anything containing a quote, a semicolon, parentheses, ":",
-// "+", "=", or any of the other characters JS actually needs and mini does
-// not — and accepting the narrow risk is judged better than the
-// alternative: a stricter rule would also make "~ ~" and "<~ bd>" — both
-// genuinely correct, silent-on-this-cycle mini-notation — report as errors.
+// most of their ASCII punctuation, so a JS snippet that (a) fails to
+// evaluate, (b) uses only these characters, and (c) parses via mini into
+// zero haps on this cycle would be wrongly accepted as silence rather than
+// reported as a JS error.
+//
+// The accepted set is mini's grammar, not a guess about which characters
+// "look like" JavaScript — that guess is what previously excluded ":",
+// "(", ")", "%" and "|" and broke every silent pattern using them. Only a
+// quote, ";", "+", "=", "&" and "$" are genuinely JS-only, and the narrow
+// residual risk is judged better than the alternative: a stricter rule
+// makes "~ ~", "<~ bd>" and "<~ bd:3>" — all correct, silent-on-this-cycle
+// mini-notation — report as errors.
+//
+// This only runs when mini produced ZERO haps. Anything with haps is judged
+// by hapsLookGenuine, whose stricter charset is deliberately untouched.
 func looksLikeMiniSource(code string) bool {
 	for _, r := range code {
 		if isMiniStepChar(r) {
 			continue
 		}
 		switch r {
-		case '[', ']', '<', '>', '{', '}', ',', '*', '/', '!', '@', '?', ' ', '\t', '\n', '\r':
+		// Mini's structural operators, taken from krill.peg rather than from
+		// intuition about which punctuation "looks like" JavaScript:
+		//   [] <> {} , * / ! @ ?   grouping, alternation, repeat, degrade
+		//   :                      op_tail — the sample index in bd:3
+		//   ( )                    op_bjorklund — euclid, bd(3,8)
+		//   %                      polymeter_steps — {a b, c}%4
+		//   |                      choose_tail — random choice
+		// The last four were excluded on the theory that JS needs them and
+		// mini does not. Mini needs all four, and every silent pattern using
+		// one reported a JavaScript syntax error: <~ bd:3>, <~ bd(3,8)>,
+		// ~|~, {~ ~, ~}%4.
+		case '[', ']', '<', '>', '{', '}', ',', '*', '/', '!', '@', '?',
+			':', '(', ')', '%', '|',
+			' ', '\t', '\n', '\r', '\u00a0':
 			continue
 		}
 		return false

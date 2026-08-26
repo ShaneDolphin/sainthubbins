@@ -69,7 +69,15 @@ func TestEvaluateCodeReportsErrorForBadMethod(t *testing.T) {
 // degrade). All three are valid JS syntax errors and must fall back to
 // mini rather than surfacing the JS error.
 func TestZeroHapMiniNotationIsNotAnError(t *testing.T) {
-	for _, src := range []string{"~ ~", "[~ ~]", "<~ bd>", "bd?1"} {
+	// The last five use mini operators — : ( ) % | — that were once excluded
+	// from looksLikeMiniSource on the theory that JS needs them and mini does
+	// not. Mini needs all of them, and each of these reported a JavaScript
+	// syntax error until that was fixed. <~ bd:3> is the same alternation
+	// idiom as <~ bd>, just naming a sample index.
+	for _, src := range []string{
+		"~ ~", "[~ ~]", "<~ bd>", "bd?1",
+		"<~ bd:3>", "<~ bd(3,8)>", "bd(0,8)", "~|~", "{~ ~, ~}%4",
+	} {
 		t.Run(src, func(t *testing.T) {
 			if _, err := EvaluateCode(src); err != nil {
 				t.Errorf("EvaluateCode(%q) = %v, want a silent pattern, not a JS error", src, err)
