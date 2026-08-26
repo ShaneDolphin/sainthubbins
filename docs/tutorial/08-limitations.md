@@ -15,22 +15,38 @@ event becomes one sine tone with a short attack and release.
 It is for checking that a rhythm and a set of pitches work. Judge your patterns
 on their timing, not their timbre.
 
-## Only five controls reach the audio
+## Only seven controls reach the audio
 
 Measured on this build. These change the WAV:
 
-`Note`, `N`, `S` (pitch), `Gain` (volume), `Cutoff` / `Lpf` (low-pass).
+`Freq`, `Note`, `N`, `S` (pitch), `Gain` (volume), `Cutoff` / `Lpf`
+(low-pass).
+
+`Freq` is the one to know about, because it is read *first* and it wins:
+give an event a `Freq` and the renderer takes that frequency and skips `N`,
+`Note` and `S` entirely. `Gain` and the filter are applied either way. The
+one exception is `Freq(220)`, which is indistinguishable from setting no
+`Freq` at all — 220 Hz is the renderer's default and it is the value the
+skip test looks for, so `core.Note("c3").Set(core.Freq(220))` renders as c3.
 
 Every other control — `Pan`, `Room`, `Speed`, `Shape`, `CRush`, `Attack`,
-`Release`, `Resonance`, `Hpf`, and the remaining 280-odd — is carried in the
+`Release`, `Resonance`, `Hpf`, and the 300-plus others — is carried in the
 event data and ignored by the renderer. Setting them is not an error and does
 nothing you can hear.
 
-## There is no live audio
+## Live audio exists, but only through `play` and only with SuperDirt running
 
-Saint Hubbins renders to a file. There is no command that plays a pattern out of
-your speakers in real time, and the web console does not produce sound. The
-workflow is: change the file, run it, open the WAV.
+`saint-hubbins play <code> [host] [port] [secs]` streams a pattern to
+SuperDirt over OSC in real time — see [the README](../../README.md) for the
+command table. It needs SuperCollider with SuperDirt already running and
+listening on `127.0.0.1:57120`; if nothing is listening, `play` still exits
+cleanly (OSC over UDP has no receiver to fail against) but you will hear
+nothing.
+
+What's still true: the **web console** (`saint-hubbins serve`) does not
+produce sound by itself — it evaluates patterns and returns hap data, nothing
+more. `render` still renders to a file rather than speakers. The workflow for
+those two remains: change the file, run it, open the WAV.
 
 ## The console evaluates mini-notation only
 
@@ -89,11 +105,16 @@ works, and it means "tempo" and "play this pattern faster" are the same
 operation. Applying `FastF` to one layer changes that layer's rhythm rather than
 the song's tempo.
 
-## The WASM build is not wired to the console
+## The WASM build is for embedders, not the console
 
-`make wasm` produces `web/static/saint-hubbins.wasm`, and the console footer
-mentions it, but the page never loads it — the console calls the Go server over
-HTTP instead. The WASM target builds and is unused.
+`make wasm` produces `web/static/saint-hubbins.wasm`, served at
+`/static/saint-hubbins.wasm` for anyone embedding the engine in their own
+page. The live console does not load it: the console's JavaScript calls
+`POST /api/evaluate` over HTTP against the running Go server, the same as
+`curl` would. This is a deliberate choice, not an oversight — the console is
+one Go binary talking HTTP to itself, with no second (WASM) evaluation path
+to keep in sync with the first. Nothing in this repository loads the WASM
+binary today; it exists only as a build target for embedding scenarios.
 
 ## What is solid
 

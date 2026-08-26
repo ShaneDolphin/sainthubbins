@@ -36,7 +36,7 @@ var templates = []struct {
 
 func TestTemplatesRenderAudio(t *testing.T) {
 	if testing.Short() {
-		t.Skip("builds and runs eight binaries; skipped under -short")
+		t.Skip("builds and runs nine binaries; skipped under -short")
 	}
 	for _, tc := range templates {
 		tc := tc

@@ -5,7 +5,7 @@
 		"strconv"
 		"strings"
 
-		"codeberg.org/uzu/strudel-go/internal/core"
+		"codeberg.org/uzu/saint-hubbins/internal/core"
 	)
 
 	func parseFloat(s string) (float64, error) {

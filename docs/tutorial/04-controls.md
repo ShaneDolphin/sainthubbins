@@ -30,20 +30,24 @@ core.Note(mini.Mini("c1*8")).
 Eight bass notes, each with its own filter setting. That is a dubstep wobble,
 and it is the technique behind the maximal dubstep template.
 
-## The four that make sound
+## The ones that make sound
 
 The offline renderer is a single sine oscillator per event. Only these change
 what you hear. This was measured, not assumed:
 
 | Control | Effect | Range |
 |---------|--------|-------|
+| `core.Freq(v)` | pitch, as a frequency in Hz | `20`–`20000` |
 | `core.Note(v)` | pitch, by note name or MIDI number | `c1`–`c6`, `0`–`127` |
 | `core.N(v)` | pitch as a MIDI number | `0`–`127` |
 | `core.S(v)` | pitch, by drum name | see below |
 | `core.Gain(v)` | volume | `0`–`2`, default `1` |
 | `core.Cutoff(v)` | low-pass filter, in Hz (`core.Lpf` is identical) | `20`–`20000` |
 
-When more than one is present, `n` wins over `note`, which wins over `s`.
+When more than one pitch control is present, `freq` beats all three of the
+others; among those three, `n` wins over `note`, which wins over `s`. `Gain`
+and `Cutoff` apply regardless. (`Freq(220)` is the one value that does not
+win — see [Limitations](08-limitations.md).)
 
 ### Drum names
 
@@ -66,8 +70,8 @@ samples — `bd` is a low thud, not a kick drum.
 
 ## The ones that are carried but silent
 
-Saint Hubbins defines 295 controls, and your events can carry any of them. The
-offline renderer ignores everything except the five above.
+Saint Hubbins defines 339 controls, and your events can carry any of them. The
+offline renderer ignores everything except the ones above.
 
 Measured as having **no effect on the WAV**: `Pan`, `Room`, `Speed`, `Shape`,
 `CRush`, `Attack`, `Release`, `Resonance`, `Hpf`, and the rest.

@@ -49,14 +49,14 @@ The tutorial also covers [building a track from scratch](docs/tutorial/06-new-so
 
 - **Pattern engine** — exact rational timing (`Fraction`), `TimeSpan`, `Hap`, `State`, and a `Pattern` type with functor / applicative / monadic composition
 - **Mini notation** — compact string language for rhythms (`"bd sd ~"`, `"[bd sd]*2"`, `"c3 e3 g3"`, `"bd(3,8)"`)
-- **295+ controls** — sound selection, pitch, filters, envelopes, spatialization, buses, and synthesis params, all composable via `Set`
+- **339 controls** — sound selection, pitch, filters, envelopes, spatialization, buses, and synthesis params, all composable via `Set`
 - **Transformation core** — time (`Slow`/`Fast`/`Early`/`Late`/`Compress`/`Zoom`), structure (`Stack`/`FastCat`/`SlowCat`/`Arrange`/`Palindrome`/`Jux`), Euclidean (`Euclid`/`Bjorklund`/`Struct`), repetition and slicing (`Ply`/`Chop`/`Striate`/`Segment`), conditional (`When`/`Every`/`Sometimes`/`Degrade`), and alignment variants
 - **Live console** — `POST /api/evaluate` and `POST /api/pianoroll` plus a single-page editor, served by `go run ./cmd/saint-hubbins serve`
 - **Offline audio** — mono `float32` rendering to WAV with gain, filter, and note-to-frequency mapping
 - **Music theory** — scales, chords, voicings, and transposition
 - **Visuals** — pianoroll, spiral, and pitch-wheel helpers — Stonehenge edition
-- **WASM bridge** — `GOOS=js GOARCH=wasm` target exposing the engine to the browser via `saintHubbins.queryPattern` in `saint-hubbins.wasm`
-- **I/O abstractions** — MIDI, OSC, Serial, MQTT, Gamepad, motion sensing, and related backends
+- **WASM build target** — the engine compiles under `GOOS=js GOARCH=wasm` to `saint-hubbins.wasm`, kept as a starting point for embedding it in someone else's page. Nothing in this repository loads it — the live console calls `POST /api/evaluate` over HTTP instead — and its `saintHubbins.queryPattern` export is still a stub that echoes its argument and returns an empty `haps` array
+- **I/O backends** — real: MIDI file export (`midi`) and real-time OSC to SuperDirt (`play`); still no-op stubs: Serial, MQTT, Gamepad, motion sensing
 
 ---
 
@@ -90,8 +90,14 @@ make test        # go test ./... -race -count=1
 make lint        # go vet ./...
 make wasm        # GOOS=js GOARCH=wasm build -> web/static/saint-hubbins.wasm
 make serve       # go run ./cmd/saint-hubbins serve
-make fmt         # gofmt -w .
+make gen         # go generate ./... — no-op; the repo has no go:generate directives
+make fmt         # gofmt -w . — see below before you run it
 ```
+
+`make fmt` reformats the whole tree, and **850 files are not currently
+`gofmt`-clean** (20 of them non-test files under `internal/core`, the rest
+tests), so one run drops all of them into your diff. Format the files you
+actually edited instead.
 
 ---
 
@@ -203,9 +209,9 @@ curl -s -X POST http://localhost:8080/api/pianoroll \
 
 ## Web Console
 
-- `web/server.go` — `Server` with `Handler()` and `Start()`, template in `web/templates/console.html`
+- `web/server.go` — `Server` with `Handler()` and `Start()`; the console page is a Go template literal in that file (`consoleTemplate`), not a separate asset
 - `web/static/` — `saint-hubbins.wasm` + `wasm_exec.js` produced by `make wasm`
-- `cmd/saint-hubbins-wasm` — `//go:build js && wasm` entry exporting `saintHubbins.queryPattern(code)` and `version` on `js.Global()`
+- `cmd/saint-hubbins-wasm` — `//go:build js && wasm` entry exporting `saintHubbins.queryPattern(code)` and `version` on `js.Global()`. The console never loads it; it is here for embedders, and `queryPattern` is a stub (it returns `{code, length, haps: []}` without touching the pattern engine)
 
 Embed the server in another Go program:
 
@@ -301,10 +307,9 @@ err = audio.WriteWAV("out.wav", samples, 48000)
 ```
 Go/
   cmd/saint-hubbins/        # native CLI + console server entry (alias hubbins)
-  cmd/saint-hubbins-wasm/   # //go:build js && wasm — browser bridge
+  cmd/saint-hubbins-wasm/   # //go:build js && wasm — embedding target, not loaded by the console
   web/
-    server.go         # Server.Handler(), /api/evaluate, /api/pianoroll
-    templates/console.html
+    server.go         # Server.Handler(), /api/evaluate, /api/pianoroll, inline console template
     static/           # saint-hubbins.wasm + wasm_exec.js (generated)
   internal/
     core/             # Fraction, TimeSpan, Hap, State, Pattern, controls, signals, scheduler
@@ -314,7 +319,7 @@ Go/
     draw/             # Pianoroll, Spiral, pitch wheel, animation
     tonal/            # Scale / Chord / Voicing / Transpose
     session/          # live session (evaluation + scheduler)
-  tools/gen-controls/ # regenerates internal/core/controls_gen.go
+  tools/gen-controls/ # generated controls_gen.go; cannot re-run today (see CLAUDE.md)
   go.mod              # module codeberg.org/uzu/saint-hubbins, go 1.25, github.com/dop251/goja
   Makefile
   LICENSE             # AGPL-3.0-or-later
@@ -325,12 +330,23 @@ Go/
 
 ## Development
 
+One command runs every automated gate — vet, the race-enabled suite, the WASM
+build, `eval`/`render`/`midi`/`play`, all nine tutorial templates, and a
+rebrand check. Each gate asserts on the *output* it gets, not just on a zero
+exit status:
+
+```bash
+./scripts/check.sh
+```
+
+The individual steps, if you want one on its own:
+
 ```bash
 go test ./... -race -count=1
 go vet ./...
 go test -tags goja ./...
-go run ./tools/gen-controls
 GOOS=js GOARCH=wasm go build -o web/static/saint-hubbins.wasm ./cmd/saint-hubbins-wasm
+go run ./tools/gen-controls   # no-op today — it needs a js/ tree this repo does not ship
 ```
 
 ---
