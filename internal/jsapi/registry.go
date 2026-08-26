@@ -4,6 +4,7 @@
 package jsapi
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/dop251/goja"
@@ -81,6 +82,62 @@ var numericOps = map[string]func(core.Pattern, float64) core.Pattern{
 	"add":       func(p core.Pattern, v float64) core.Pattern { return p.Add(v) },
 }
 
+// numericArgRules constrains a numericOps argument beyond "a finite number",
+// for ops where a zero or negative value is not just unusual but actively
+// breaks the underlying engine call rather than doing something coherent:
+//
+//   - fast/slow/segment divide by (or otherwise scale by) the argument
+//     (FastF, SlowF, Segment). Zero is a division by zero — SlowF computes
+//     1/frac eagerly, so .slow(0) panics synchronously inside the JS call
+//     itself ("Fraction.Div: division by zero"), outside any recover, and
+//     crashes the process exactly like the ±Infinity case below; .fast(0)
+//     panics lazily at Query time instead, caught by the recover in
+//     QueryArc (internal/core/pattern.go), which prints "query panic: ..."
+//     to stdout and silently returns zero haps — no crash, but the same
+//     silent-failure shape this whole plan exists to remove. A negative
+//     factor doesn't panic anywhere, but empirically (verified by hand)
+//     produces zero haps just as silently, for the same underlying reason:
+//     this engine's time-scaling machinery assumes a positive factor.
+//     Segment already clamps a non-positive rate to 1 inside
+//     core.Pattern.Segment rather than crashing, but that's a *silent*
+//     override of what the caller asked for — the same failure shape,
+//     just without the crash or the log line.
+//   - ply repeats each event by its argument via SqueezeJoin. Zero is
+//     coherent on its own terms (repeat something zero times is nothing,
+//     and core.Pattern.Ply already resolves it to Silence() deliberately,
+//     without panicking or printing anything) so it is left alone. A
+//     negative repeat count has no coherent reading and — like fast/slow/
+//     segment — empirically just produces zero haps silently.
+//
+// late, early, degradeBy and add are deliberately absent: a negative
+// offset is just an offset in the other direction (verified: .early(-0.25)
+// and .late(-0.25) both produce the expected event count, not zero
+// haps or a panic); degradeBy(0)/degradeBy(negative) both mean "never
+// drop" and return every hap, which is exactly the coherent boundary
+// behaviour DegradeBy's own doc comment implies; add's whole point is
+// signed arithmetic, so a negative addend is the normal case, not an
+// edge case.
+var numericArgRules = map[string]func(v float64) error{
+	"fast":    requirePositive,
+	"slow":    requirePositive,
+	"segment": requirePositive,
+	"ply":     requireNonNegative,
+}
+
+func requirePositive(v float64) error {
+	if v <= 0 {
+		return fmt.Errorf("must be a positive number, got %v", v)
+	}
+	return nil
+}
+
+func requireNonNegative(v float64) error {
+	if v < 0 {
+		return fmt.Errorf("must not be negative, got %v", v)
+	}
+	return nil
+}
+
 // normalizeNumber ensures a control value coming from goja is a Go float64
 // rather than int64: goja's Export() returns int64 for any JS number with
 // no fractional part — `.cutoff(800)` and even `.cutoff(800.0)` both export
@@ -147,10 +204,22 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 	wrap := func(p core.Pattern) goja.Value { return vm.ToValue(newJSPattern(vm, p)) }
 
 	// requireNumber extracts a numeric argument for a numericOps entry,
-	// raising a TypeError for a missing argument (ToFloat on the resulting
-	// undefined is NaN) or one that doesn't convert to a number (e.g. a
-	// string like "banana" also converts to NaN) rather than silently
-	// building a fraction out of NaN.
+	// raising a TypeError for:
+	//   - a missing argument (ToFloat on the resulting undefined is NaN);
+	//   - one that doesn't convert to a number (e.g. a string like
+	//     "banana" also converts to NaN);
+	//   - ±Infinity — core.FractionFromFloat itself panics on a non-finite
+	//     float ("invalid float +Inf"), synchronously, inside this very JS
+	//     call; goja only recovers panics of its own error types, so an
+	//     unguarded .fast(Infinity) crashes the whole process (verified),
+	//     not just this one Evaluate call — this is the same class of bug
+	//     the timeout/interrupt handling in runtime.go exists to prevent
+	//     for a hanging script, just via a different mechanism;
+	//   - any op-specific domain rule in numericArgRules (see its comment).
+	// A JS boolean argument (.fast(true)) is deliberately NOT rejected
+	// here: ToFloat(true) is a well-defined, finite 1.0, matching ordinary
+	// JS arithmetic (`true + 1 === 2`) rather than this engine inventing a
+	// stricter rule departure just for chained methods.
 	requireNumber := func(name string, call goja.FunctionCall) float64 {
 		if len(call.Arguments) == 0 {
 			panic(vm.NewTypeError("%s: requires a numeric argument", name))
@@ -158,6 +227,14 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 		v := call.Argument(0).ToFloat()
 		if math.IsNaN(v) {
 			panic(vm.NewTypeError("%s: argument %q is not a number", name, call.Argument(0).String()))
+		}
+		if math.IsInf(v, 0) {
+			panic(vm.NewTypeError("%s: argument must be finite, got %v", name, v))
+		}
+		if rule, ok := numericArgRules[name]; ok {
+			if err := rule(v); err != nil {
+				panic(vm.NewTypeError("%s: %v", name, err))
+			}
 		}
 		return v
 	}
