@@ -103,6 +103,11 @@ func TestChainErrorSurfacing(t *testing.T) {
 		"every with null n":            `s("bd").every(null, function(p) { return p; })`,
 		"every with zero n":            `s("bd").every(0, function(p) { return p; })`,
 		"every with a negative n":      `s("bd").every(-1, function(p) { return p; })`,
+		// A fraction in (0,1) passed the old nFloat <= 0 check, then
+		// truncated to 0 and hit core.Every's own silent no-op branch. The
+		// guard now tests the truncated value, so these must error too.
+		"every with a fractional n under one": `s("bd").every(0.5, function(p) { return p; })`,
+		"every with a fractional n over one":  `s("bd").every(1.5, function(p) { return p; })`,
 
 		// A round of manual probing (see task-2 report) found several
 		// numeric edge cases the NaN-only guard above didn't cover, two of

@@ -329,16 +329,25 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 			panic(vm.NewTypeError("every: requires two arguments (n, fn)"))
 		}
 		nFloat := requireFiniteNumber("every", call, 0)
-		if nFloat <= 0 {
-			// core.Pattern.Every treats n <= 0 as "return the pattern
-			// unchanged" (pattern_time.go) — silent from this binding's
-			// point of view. NaN/Infinity/a non-numeric first argument are
-			// already rejected above by requireFiniteNumber; this catches
-			// the remaining silent case review found: 0, a negative
-			// number, or null (which converts to 0 via ToFloat).
-			panic(vm.NewTypeError("every: n must be a positive number, got %v", nFloat))
+		// core.Pattern.Every treats n <= 0 as "return the pattern unchanged"
+		// (pattern_time.go) — silent from this binding's point of view.
+		// NaN/Infinity/a non-numeric first argument are already rejected
+		// above by requireFiniteNumber; this catches 0, a negative number,
+		// and null (which converts to 0 via ToFloat).
+		//
+		// Test the TRUNCATED value, not the float. Checking nFloat <= 0
+		// alone let every fraction in (0,1) through: 0.5 passes the float
+		// test, truncates to 0, and lands right back in Every's silent
+		// no-op branch — the same bug one layer down. Whole numbers only
+		// also rules out 1.5 quietly becoming "every cycle", which is a
+		// silent surprise rather than a silent no-op but no more honest.
+		if nFloat != math.Trunc(nFloat) {
+			panic(vm.NewTypeError("every: n must be a whole number of cycles, got %v", nFloat))
 		}
 		n := int(nFloat)
+		if n <= 0 {
+			panic(vm.NewTypeError("every: n must be a positive number, got %v", nFloat))
+		}
 		fn, ok := goja.AssertFunction(call.Argument(1))
 		if !ok {
 			panic(vm.NewTypeError("every: second argument must be a function"))
