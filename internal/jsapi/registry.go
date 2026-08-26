@@ -23,17 +23,28 @@ var controls = map[string]func(any) core.Pattern{
 }
 
 // toPattern coerces a JS argument into a Pattern: a wrapped pattern passes
-// through, a string is mini-notation, a number is a constant.
-func toPattern(v any) core.Pattern {
+// through, a string is mini-notation (matching every other place in this API
+// that accepts a Pattern argument — s(), the control setters), and a number
+// becomes a constant Pattern via core.Pure. It reports ok=false for anything
+// else (null, undefined, a plain object, a function, a boolean) rather than
+// silently falling back to Silence(): the variadic combinators in register()
+// below are this function's only caller, and a caller error there — a typo'd
+// undefined variable, a stray object literal — must surface as a JS
+// TypeError, not vanish as an extra empty layer. That silent-fallback shape
+// is exactly the bug this package has already shipped three times over for
+// numeric arguments (see numericArgRules and requireFiniteNumber's
+// comments); toPattern is where the same mistake would recur for pattern
+// arguments, so it reports failure instead of papering over it.
+func toPattern(v any) (core.Pattern, bool) {
 	switch x := v.(type) {
 	case *jsPattern:
-		return x.pat
+		return x.pat, true
 	case string:
-		return mini.Mini(x)
+		return mini.Mini(x), true
 	case float64, int, int64:
-		return core.Pure(x)
+		return core.Pure(x), true
 	}
-	return core.Silence()
+	return core.Silence(), false
 }
 
 // register installs every global into the VM.
@@ -59,6 +70,78 @@ func register(vm *goja.Runtime) error {
 			return err
 		}
 	}
+
+	// Variadic combinators combine multiple pattern arguments into one.
+	// cat is an alias for slowcat (core.Cat already just calls SlowCat);
+	// sequence is an alias for fastcat (core.Sequence already just calls
+	// FastCat) — both are exposed under both names because both spellings
+	// are how this vocabulary is normally written.
+	//
+	// Every argument goes through toPattern, which reports ok=false for
+	// anything that isn't a wrapped pattern, a mini-notation string, or a
+	// number. That's deliberate, not incidental: a variadic pattern
+	// argument is a new shape nothing else in this file validates yet, and
+	// the wrong default — silently treating an unrecognized argument as an
+	// empty layer — is exactly the silent-no-op class of bug numericOps
+	// already shipped three times over for numbers. stack(), cat(), etc.
+	// called with zero arguments is not an error: core.Stack/Cat/FastCat/
+	// SlowCat/Sequence each already special-case zero patterns and return
+	// Silence(), which is a coherent "combine nothing" identity, not a
+	// caller mistake — so an empty argument list is passed straight
+	// through rather than rejected.
+	variadic := map[string]func(...core.Pattern) core.Pattern{
+		"stack":    core.Stack,
+		"cat":      core.Cat,
+		"slowcat":  core.SlowCat,
+		"fastcat":  core.FastCat,
+		"sequence": core.Sequence,
+	}
+	for name, fn := range variadic {
+		name, fn := name, fn
+		if err := vm.Set(name, func(call goja.FunctionCall) goja.Value {
+			pats := make([]core.Pattern, 0, len(call.Arguments))
+			for i, a := range call.Arguments {
+				p, ok := toPattern(a.Export())
+				if !ok {
+					panic(vm.NewTypeError(
+						"%s: argument %d is not a pattern, string or number (got %T)",
+						name, i, a.Export()))
+				}
+				pats = append(pats, p)
+			}
+			return wrap(fn(pats...))
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := vm.Set("silence", func(goja.FunctionCall) goja.Value {
+		return wrap(core.Silence())
+	}); err != nil {
+		return err
+	}
+
+	// mini() is an explicit escape hatch to the rhythm language. Unlike
+	// s()/the control setters, it has no other reasonable input than a
+	// literal mini-notation string — call.Argument(0).String() would
+	// happily coerce a missing argument to the string "undefined" and a
+	// wrapped pattern object to "[object Object]", parse that coerced
+	// text as mini-notation, and hand back a pattern that plays a sample
+	// literally named "undefined" — a silently wrong result, not an
+	// error. Requiring an actual JS string argument closes that off.
+	if err := vm.Set("mini", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(vm.NewTypeError("mini: requires a string argument"))
+		}
+		s, ok := call.Argument(0).Export().(string)
+		if !ok {
+			panic(vm.NewTypeError("mini: argument must be a string, got %T", call.Argument(0).Export()))
+		}
+		return wrap(mini.Mini(s))
+	}); err != nil {
+		return err
+	}
+
 	return nil
 }
 
