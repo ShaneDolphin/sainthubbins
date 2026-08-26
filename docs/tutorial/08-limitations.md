@@ -70,7 +70,40 @@ remains true is that the JS vocabulary is **curated, not complete**:
 The full list is [chapter 7](07-new-song-web.md#the-text-vocabulary); the
 binding tables themselves are `internal/jsapi/registry.go`. A name outside it
 raises an error rather than doing nothing quietly, so you will find the edge by
-hitting it, not by wondering.
+hitting it, not by wondering — with one exception, below.
+
+### A typo inside an `every` callback is silent
+
+Everywhere else, a name the JS evaluator does not bind is a real, visible
+error: `s("bd").revv()` at the top level reports `TypeError: Object has no
+member 'revv'` and the CLI exits non-zero, the console returns an `error`
+field. Inside an `every(n, fn)` callback it does not:
+
+```
+s("bd*4").every(2, x => x.revv())
+```
+
+`eval`s cleanly, exits 0, and produces zero events on every cycle the
+callback runs on (verified: cycle 0 has 0 haps, cycle 1 — where the callback
+does not run — has the expected 4).
+
+This is not a missed case; it is a structural limit. `fn` is called lazily,
+at *query* time, from deep inside `core.Pattern.Query` — a plain Go call
+stack with no goja frame above it and no channel back to whatever called
+`Evaluate`, which may already have returned cycles ago. A Go error from
+calling the callback (which is exactly what a typo like `revv` produces) or
+a panic inside it cannot be turned into the error `Evaluate` returns, and
+panicking here is not reliably caught by anything (see
+`internal/jsapi/registry.go`'s comment on the `every` binding for why). The
+engine falls back to `core.Silence()` for that one invocation instead: a
+broken per-cycle transform shows up as an audible dropout in the rendered
+cycle, not as a crash and not as a misleading return value either.
+
+If a pattern using `every` is producing less than you expect and nothing is
+reporting an error, check the callback's method names against
+[chapter 7's vocabulary table](07-new-song-web.md#the-text-vocabulary) by
+hand — this is the one place in the text evaluator where a typo will not
+tell you.
 
 One difference in kind, not just coverage: `.fast()` takes a JavaScript number,
 so a ratio like `.fast(128/120)` is converted from a *float*, and the resulting

@@ -113,7 +113,10 @@ That difference is the whole reason the text layer exists.
 ## The text vocabulary
 
 Everything the JS evaluator binds. There is nothing else — a name not on this
-list raises an error rather than doing nothing.
+list raises an error rather than doing nothing, *except* inside an
+`every(n, fn)` callback, where a typo cannot raise anything the console can
+show you and silently produces no events for the cycles it runs on instead —
+see [chapter 8](08-limitations.md#a-typo-inside-an-every-callback-is-silent).
 
 | Kind | Names |
 |---|---|
