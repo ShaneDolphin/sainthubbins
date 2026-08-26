@@ -198,9 +198,17 @@ check "all nine example templates build and run" bash -c '
 # path in a generated parser's source, missed by a rebrand sed scoped to
 # *.go. Excluding krill.peg wholesale would blind the gate to that exact bug
 # recurring in the one file most like the one it already caught.
+# Scans TRACKED files (git ls-files), not the working tree. A filesystem walk
+# also descends into git-ignored scratch — .claude/, nested worktrees, build
+# output — and this gate failed on exactly that: a worktree checked out under
+# .claude/worktrees/ carries its own copy of docs/archive/, whose path no
+# `^\./docs/archive/` filter matches. The repository is its tracked files, so
+# ask git what those are. `sed` restores the leading ./ the filters expect.
 check "no leftover Strudel dependency/import path" bash -c '
-  hits=$(grep -rnI --exclude-dir=.git \
-      -e "@strudel/" -e "strudel-go" -e "codeberg\.org/uzu/strudel" . \
+  hits=$(git ls-files -z \
+    | xargs -0 grep -nIH \
+      -e "@strudel/" -e "strudel-go" -e "codeberg\.org/uzu/strudel" -- \
+    | sed "s|^|./|" \
     | grep -v "^\./\.superpowers/" \
     | grep -v "^\./docs/archive/" \
     | grep -v "^\./docs/superpowers/" \
