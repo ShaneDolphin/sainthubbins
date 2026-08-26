@@ -206,8 +206,13 @@ Everything else is still Go: the rest of the control vocabulary (`Hpf`, `Crush`,
 (`s "0"`, `s "1"`, ...), not notes: mini-notation stores a bare numeric token
 as a string, so it takes the same path as `bd`, not the numeric `n` path. If
 you want a sample index, use `bd:3` (see `bd:1` in the mini-notation table
-below); if you want actual note numbers, name the control instead of relying on
-the token — `play 'n("0 1 2 3")'` as text, or `core.N` in Go.
+below); if you want the values read as note/index numbers, name the control
+instead of relying on the token. `play 'n("0 1 2 3")'` sends
+`/dirt/play n "0" cps ... delta ...` — the value is still an OSC string,
+because it came from mini-notation, but it now arrives under the `n` key
+SuperDirt reads as a number rather than the `s` key it reads as a sample name.
+`core.N` in Go does the same; `n("0 1 2 3").add(0)` makes the values genuinely
+numeric if you need that.
 
 `midi` has the same bare-numeric trap, and one MIDI-specific trap of its own:
 
@@ -217,7 +222,7 @@ the token — `play 'n("0 1 2 3")'` as text, or `core.N` in Go.
   pitchless. Unlike `play`'s `bd:3` sample-index workaround, MIDI export
   needs a resolvable note: reference a bare drum name like `bd` for a
   percussive hit, or name the control — `midi out.mid 'n("0 1 2 3")' 1`
-  writes 3 notes where `midi out.mid "0 1 2 3" 1` writes 0, and `core.N` /
+  writes 4 notes where `midi out.mid "0 1 2 3" 1` writes 0, and `core.N` /
   `core.Note` do the same from Go. The CLI reports the emitted note count
   (`wrote out.mid (1 cycles, 0 notes)`) and warns on stderr when it is zero,
   so this should not be silent.

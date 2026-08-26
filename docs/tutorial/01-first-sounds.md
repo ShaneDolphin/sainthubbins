@@ -125,7 +125,8 @@ hear nothing, that is almost always why.
 One trap worth knowing before you type a pattern like `"0 1 2 3"`: a bare
 number in mini-notation is stored as a string, so `play` sends it as a
 **sample name** (`s "0"`), not a note number. For a sample index use `bd:3`
-syntax; for real note numbers, name the control — `play 'n("0 1 2 3")'`, or
+syntax; to have the numbers read as numbers, name the control —
+`play 'n("0 1 2 3")'` sends them under the `n` key instead of `s`, and so does
 `core.N` in Go.
 
 That `n(...)` is the other thing `eval`, `render` and `play` accept: JS pattern
