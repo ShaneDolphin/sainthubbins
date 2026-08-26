@@ -22,29 +22,136 @@ var controls = map[string]func(any) core.Pattern{
 	"attack": core.Attack, "release": core.Release, "shape": core.Shape,
 }
 
-// toPattern coerces a JS argument into a Pattern: a wrapped pattern passes
-// through, a string is mini-notation (matching every other place in this API
-// that accepts a Pattern argument — s(), the control setters), and a number
-// becomes a constant Pattern via core.Pure. It reports ok=false for anything
-// else (null, undefined, a plain object, a function, a boolean) rather than
-// silently falling back to Silence(): the variadic combinators in register()
-// below are this function's only caller, and a caller error there — a typo'd
-// undefined variable, a stray object literal — must surface as a JS
-// TypeError, not vanish as an extra empty layer. That silent-fallback shape
-// is exactly the bug this package has already shipped three times over for
-// numeric arguments (see numericArgRules and requireFiniteNumber's
-// comments); toPattern is where the same mistake would recur for pattern
-// arguments, so it reports failure instead of papering over it.
-func toPattern(v any) (core.Pattern, bool) {
+// coerceJSValue is the single place a JS-exported value is classified,
+// for every position in this file that turns one into either a Pattern or
+// a control constructor's argument. A wrapped pattern always becomes its
+// underlying core.Pattern, and a string is always mini-notation — those
+// two rules are shared by every call site below. A number and anything
+// else disagree by call site, which is what the two bool parameters
+// encode, each documented at its call sites rather than duplicated as a
+// fifth (or sixth) hand-rolled type switch:
+//
+//   - acceptNumber is true for a *pattern-argument* position — a variadic
+//     combinator's argument (stack(42), cat(1, 2)) — where a bare number
+//     has always meant "a constant pattern" (toPattern below). It is false
+//     for a *pattern-result* position — Evaluate's top-level result and
+//     the every()/off() callback's return value (toPatternResult below) —
+//     where a bare number was never a valid pattern in the first place;
+//     TestEvaluateRejectsNonPatternResult has asserted `Evaluate("42")` is
+//     an error since before this function existed, and unifying it with
+//     the combinator-argument rule would silently flip that to success.
+//     Control-constructor/setter positions (toControlValue below) also
+//     pass true, matching every control's existing acceptance of a bare
+//     number (s(42), .gain(0.5)).
+//   - wrapNumberAsPure only matters when acceptNumber is true. It is true
+//     for a pattern-argument position, which needs an actual core.Pattern
+//     handed back. It is false for a control-constructor/setter position:
+//     createParam (internal/core/controls.go) takes a raw value and does
+//     its own Pure(buildBag(value)) wrapping, and pre-wrapping here would
+//     instead reach createParam's *Pattern* branch (Fmap over an existing
+//     Pattern) — a different code path that happens to build the same
+//     shape of bag for a plain scalar, but only by coincidence; the two
+//     branches genuinely disagree for a multi-value bag (see buildBag's
+//     array/`{value: ...}` handling), so keeping a bare number unwrapped
+//     here is the correct behaviour, not just the simpler one.
+//
+// Anything that isn't a wrapped pattern, a string, or an accepted number —
+// null, undefined, a plain object, a function, a boolean — is rejected
+// (ok=false) unconditionally, regardless of either flag: no position in
+// this API has ever had a coherent meaning for those, and silently mapping
+// one to Silence() (the pattern positions) or embedding it verbatim in a
+// control bag (createParam's own fallback — verified: this is exactly how
+// `s(function(){})` used to embed a raw Go pointer address as a control
+// value) is the silent-failure shape this whole plan exists to remove.
+func coerceJSValue(v any, acceptNumber, wrapNumberAsPure bool) (any, bool) {
 	switch x := v.(type) {
 	case *jsPattern:
 		return x.pat, true
 	case string:
 		return mini.Mini(x), true
 	case float64, int, int64:
-		return core.Pure(x), true
+		if !acceptNumber {
+			return nil, false
+		}
+		if wrapNumberAsPure {
+			return core.Pure(x), true
+		}
+		return normalizeNumber(x), true
 	}
-	return core.Silence(), false
+	return nil, false
+}
+
+// toPattern coerces a variadic combinator's argument (stack, cat, slowcat,
+// fastcat, sequence) into a Pattern: a wrapped pattern passes through, a
+// string is mini-notation (matching every other place in this API that
+// accepts a Pattern argument — s(), the control setters), and a number
+// becomes a constant Pattern via core.Pure. It reports ok=false for
+// anything else (null, undefined, a plain object, a function, a boolean)
+// rather than silently falling back to Silence(): a caller error here — a
+// typo'd undefined variable, a stray object literal — must surface as a JS
+// TypeError, not vanish as an extra empty layer. That silent-fallback shape
+// is exactly the bug this package has already shipped three times over for
+// numeric arguments (see numericArgRules and requireFiniteNumber's
+// comments); this is where the same mistake would recur for pattern
+// arguments, so it reports failure instead of papering over it.
+func toPattern(v any) (core.Pattern, bool) {
+	p, ok := coerceJSValue(v, true, true)
+	if !ok {
+		return core.Silence(), false
+	}
+	return p.(core.Pattern), true
+}
+
+// toPatternResult coerces a value a JS caller *returned* — Evaluate's
+// top-level script result, or the every()/off() callback's return value —
+// into a Pattern. It shares toPattern's pattern/string rules but does not
+// accept a bare number: unlike a combinator argument, a number was never a
+// valid result here (see coerceJSValue's acceptNumber doc), a rule
+// TestEvaluateRejectsNonPatternResult has enforced from before this
+// consolidation.
+func toPatternResult(v any) (core.Pattern, bool) {
+	p, ok := coerceJSValue(v, false, false)
+	if !ok {
+		return core.Silence(), false
+	}
+	return p.(core.Pattern), true
+}
+
+// toControlValue coerces a JS-exported value into the argument a control
+// constructor (createParam, internal/core/controls.go) expects: a wrapped
+// pattern or a mini-notation string become a core.Pattern, so a modulated
+// control like .gain(sine) reaches createParam's own Pattern branch; a
+// number is normalized to float64 and passed through raw for createParam
+// to wrap itself (see coerceJSValue's wrapNumberAsPure doc for why it must
+// stay raw here). It reports ok=false for anything else — createParam has
+// no argument validation of its own, so without this check it silently
+// embeds whatever it's given as the control's value.
+func toControlValue(v any) (any, bool) {
+	return coerceJSValue(v, true, false)
+}
+
+// describeJSArg names a rejected argument the way a JS author would
+// recognize it, rather than a bare Go %T that only makes sense once you
+// know goja's Export() mapping (e.g. both null and undefined export as a
+// Go nil, and a JS object exports as map[string]interface{}).
+func describeJSArg(v goja.Value) string {
+	if v == nil || goja.IsUndefined(v) {
+		return "undefined"
+	}
+	if goja.IsNull(v) {
+		return "null"
+	}
+	if _, ok := goja.AssertFunction(v); ok {
+		return "a function"
+	}
+	switch x := v.Export().(type) {
+	case bool:
+		return fmt.Sprintf("the boolean %v", x)
+	case map[string]any:
+		return "a plain object"
+	default:
+		return fmt.Sprintf("%T", x)
+	}
 }
 
 // register installs every global into the VM.
@@ -52,20 +159,18 @@ func register(vm *goja.Runtime) error {
 	wrap := func(p core.Pattern) goja.Value { return vm.ToValue(newJSPattern(vm, p)) }
 
 	for name, ctor := range controls {
-		ctor := ctor
+		name, ctor := name, ctor
 		if err := vm.Set(name, func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 {
 				return wrap(core.Silence())
 			}
-			arg := call.Argument(0).Export()
-			// A string argument is mini-notation, so s("bd sd") is a sequence.
-			if str, ok := arg.(string); ok {
-				return wrap(ctor(mini.Mini(str)))
+			arg0 := call.Argument(0)
+			v, ok := toControlValue(arg0.Export())
+			if !ok {
+				panic(vm.NewTypeError("%s: argument must be a pattern, string or number, got %s",
+					name, describeJSArg(arg0)))
 			}
-			if jp, ok := arg.(*jsPattern); ok {
-				return wrap(ctor(jp.pat))
-			}
-			return wrap(ctor(arg))
+			return wrap(ctor(v))
 		}); err != nil {
 			return err
 		}
@@ -104,8 +209,8 @@ func register(vm *goja.Runtime) error {
 				p, ok := toPattern(a.Export())
 				if !ok {
 					panic(vm.NewTypeError(
-						"%s: argument %d is not a pattern, string or number (got %T)",
-						name, i, a.Export()))
+						"%s: argument %d must be a pattern, string or number, got %s",
+						name, i, describeJSArg(a)))
 				}
 				pats = append(pats, p)
 			}
@@ -240,8 +345,9 @@ func normalizeNumber(v any) any {
 }
 
 // patternFromJSValue converts a JS value into a Pattern the same way
-// unwrap does for a top-level Evaluate result: a wrapped pattern passes
-// through, a bare string is mini-notation. It reports false rather than
+// unwrap does for a top-level Evaluate result — both route through
+// toPatternResult, so a bare number is rejected here exactly as it is at
+// the top level (see toPatternResult's doc). It reports false rather than
 // erroring for anything else, because its only caller (the every/off
 // callback re-entry below) runs at Query time, outside any goja call frame
 // — there is no way to turn that into a Go error the original Evaluate
@@ -250,13 +356,7 @@ func patternFromJSValue(v goja.Value) (core.Pattern, bool) {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return core.Silence(), false
 	}
-	switch x := v.Export().(type) {
-	case *jsPattern:
-		return x.pat, true
-	case string:
-		return mini.Mini(x), true
-	}
-	return core.Silence(), false
+	return toPatternResult(v.Export())
 }
 
 // attachMethods installs every chainable method on a wrapped pattern's JS
@@ -352,25 +452,29 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 	}
 
 	// Controls double as setters when called on a pattern: .gain(0.5) merges
-	// a gain control into every event. A string argument is mini-notation
-	// (matching the top-level constructors in register()); a wrapped
-	// pattern argument is unwrapped to a core.Pattern so a modulated control
-	// like .gain(sine) reaches createParam's own Pattern branch instead of
-	// being embedded as an opaque *jsPattern value.
+	// a gain control into every event. Argument conversion goes through
+	// toControlValue, the same primitive register()'s top-level constructors
+	// use: a string argument is mini-notation, a wrapped pattern argument is
+	// unwrapped to a core.Pattern so a modulated control like .gain(sine)
+	// reaches createParam's own Pattern branch instead of being embedded as
+	// an opaque *jsPattern value, and anything else createParam has no
+	// coherent meaning for (null, undefined, a plain object, a function, a
+	// boolean) raises a TypeError instead of being embedded verbatim in the
+	// control bag — see toControlValue's doc for why createParam itself
+	// can't be trusted to reject these on its own.
 	for name, ctor := range controls {
 		name, ctor := name, ctor
 		_ = proto.Set(name, func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 {
 				panic(vm.NewTypeError("%s: requires an argument", name))
 			}
-			switch arg := call.Argument(0).Export().(type) {
-			case string:
-				return wrap(jp.pat.Set(ctor(mini.Mini(arg))))
-			case *jsPattern:
-				return wrap(jp.pat.Set(ctor(arg.pat)))
-			default:
-				return wrap(jp.pat.Set(ctor(normalizeNumber(arg))))
+			arg0 := call.Argument(0)
+			v, ok := toControlValue(arg0.Export())
+			if !ok {
+				panic(vm.NewTypeError("%s: argument must be a pattern, string or number, got %s",
+					name, describeJSArg(arg0)))
 			}
+			return wrap(jp.pat.Set(ctor(v)))
 		})
 	}
 

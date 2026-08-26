@@ -56,18 +56,18 @@ func Evaluate(code string) (core.Pattern, error) {
 	return unwrap(vm, v)
 }
 
-// unwrap converts a JS result into a Pattern. A bare string is treated as
-// mini-notation so `"bd sd"` works, but anything else is an error rather than
-// a literal-valued hap.
+// unwrap converts a JS result into a Pattern via toPatternResult: a wrapped
+// pattern passes through, a bare string is treated as mini-notation so
+// `"bd sd"` works, and anything else — including a bare number, which
+// TestEvaluateRejectsNonPatternResult has always required to be an error
+// here rather than becoming a one-hap pattern — is reported rather than
+// turned into a literal-valued hap.
 func unwrap(vm *goja.Runtime, v goja.Value) (core.Pattern, error) {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return core.Silence(), fmt.Errorf("jsapi: expression produced no value")
 	}
-	if obj, ok := v.Export().(*jsPattern); ok {
-		return obj.pat, nil
-	}
-	if s, ok := v.Export().(string); ok {
-		return mini.Mini(s), nil
+	if p, ok := toPatternResult(v.Export()); ok {
+		return p, nil
 	}
 	return core.Silence(), fmt.Errorf("jsapi: expression produced %T, want a pattern", v.Export())
 }
