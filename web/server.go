@@ -114,10 +114,9 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	// EvaluateCode already returns core.Silence() on error — no need to
+	// substitute it here too.
 	pat, err := jsapi.EvaluateCode(req.Code)
-	if err != nil {
-		pat = core.Silence()
-	}
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
 	out := make([]map[string]any, len(haps))
 	for i, h := range haps {
@@ -149,10 +148,9 @@ func (s *Server) handlePianoroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	// EvaluateCode already returns core.Silence() on error — no need to
+	// substitute it here too.
 	pat, err := jsapi.EvaluateCode(req.Code)
-	if err != nil {
-		pat = core.Silence()
-	}
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(2))
 	type Resp struct {
 		Haps  []map[string]any `json:"haps"`

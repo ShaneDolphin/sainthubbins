@@ -563,12 +563,17 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 			// returned, and outside any goja call frame Evaluate's caller
 			// is inside of. Neither a Go error from calling fn nor a
 			// non-pattern return value can be turned into the Go error
-			// Evaluate returns; panicking here would crash the host process
-			// instead (this codebase has no recover() anywhere). Falling
-			// back to Silence for just that invocation is the least-silent
-			// safe option: a broken per-cycle transform shows up as an
-			// audible dropout in the rendered cycle, not as a subtly wrong
-			// or duplicated one.
+			// Evaluate returns; panicking here is not reliably caught. A
+			// panic reaching internal/core/pattern.go's QueryArc through
+			// its own top-level call to Query is recovered there and only
+			// logged — but plenty of internal call paths invoke a
+			// Pattern's Query directly rather than through QueryArc, and a
+			// panic that doesn't pass through QueryArc's specific call
+			// frame still crashes the host process. Falling back to
+			// Silence for just this invocation is the least-silent safe
+			// option regardless of which of those two cases applies: a
+			// broken per-cycle transform shows up as an audible dropout in
+			// the rendered cycle, not as a subtly wrong or duplicated one.
 			res, err := fn(goja.Undefined(), vm.ToValue(newJSPattern(vm, p)))
 			if err != nil {
 				return core.Silence()

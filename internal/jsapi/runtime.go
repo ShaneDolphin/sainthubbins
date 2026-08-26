@@ -14,12 +14,32 @@ import (
 	"codeberg.org/uzu/saint-hubbins/internal/mini"
 )
 
-// evaluateTimeout bounds how long a single Evaluate call may run JS before
-// it is interrupted. Runaway code — an infinite loop, a pattern that never
-// stops recursing — would otherwise hang the calling goroutine forever;
-// under Task 4 that goroutine is a web request handler, so a hang there
-// becomes a downed console rather than just a stuck test. A package-level
-// constant keeps the default in one place and tunable if it proves wrong.
+// evaluateTimeout bounds how long vm.RunString itself may run before it is
+// interrupted — an infinite loop in the evaluated script (`while(true){}`)
+// cannot hang the calling goroutine past this deadline.
+//
+// That is a narrower guarantee than it sounds like. Two things this timer
+// does NOT cover, both confirmed by hanging a real test process on them:
+//
+//   - Query time. `s("bd").ply(1e9)` returns from RunString quickly — it
+//     builds a lazy Pattern, it doesn't query one — so the interrupt never
+//     fires. The actual work happens in QueryArc, which every caller of
+//     EvaluateCode runs itself, outside this function and outside the
+//     timer entirely. A web handler calling QueryArc on a pattern shaped
+//     like that hangs (and can OOM) with nothing here to stop it. This is
+//     pre-existing in kind, not new: `bd*1000000000` through plain
+//     mini-notation has the identical shape of problem, and bounding query
+//     time is a separate piece of work, not part of this fix.
+//   - Native builtins. vm.Interrupt only takes effect at goja bytecode
+//     instruction boundaries. A call into a native builtin that loops
+//     internally in Go — `new Array(1e9).join("x")` — does not return to
+//     the bytecode loop until it finishes, so the interrupt can't land
+//     until after the hang is already over.
+//
+// What this timer does guarantee: JS whose hang is in the *evaluated
+// script's own bytecode* — a loop, unbounded recursion — is interrupted.
+// A package-level constant keeps the default in one place and tunable if
+// it proves wrong.
 const evaluateTimeout = 5 * time.Second
 
 // Evaluate runs code in a fresh VM and returns the pattern it produced.
