@@ -68,13 +68,41 @@ func TestEuclidFromJS(t *testing.T) {
 // no-op instead of failing loud.
 func TestChainErrorSurfacing(t *testing.T) {
 	cases := map[string]string{
-		"fast with no argument":                     `s("bd").fast()`,
-		"fast with a non-numeric argument":          `s("bd").fast("banana")`,
-		"unrecognized method":                       `s("bd").nosuchmethod()`,
-		"euclid with one argument":                  `s("bd").euclid(3)`,
-		"control setter with no argument":           `s("bd").gain()`,
-		"every with too few arguments":              `s("bd").every(3)`,
+		"fast with no argument":            `s("bd").fast()`,
+		"fast with a non-numeric argument": `s("bd").fast("banana")`,
+		"unrecognized method":              `s("bd").nosuchmethod()`,
+		"control setter with no argument":  `s("bd").gain()`,
+
+		// Named for what they actually exercise, not "too few arguments":
+		// with the dedicated arg-count guard hypothetically deleted, a
+		// missing steps/callback argument would still be rejected by
+		// requireFiniteNumber(idx=1) (euclid) or the AssertFunction(undefined)
+		// !ok check (every) respectively — so a test that only asserts
+		// "err != nil" here can't tell the dedicated guard apart from that
+		// fallback path. Kept anyway because the case itself (calling with
+		// a missing argument) is still worth asserting; named to match.
+		"euclid with a missing steps argument":      `s("bd").euclid(3)`,
+		"every with a missing callback argument":    `s("bd").every(3)`,
 		"every with a non-function second argument": `s("bd").every(3, "notAFunction")`,
+
+		// review round 2: euclid's pulses/steps and every's n take numeric
+		// arguments by hand, outside the numericOps table the round-1 fix
+		// hardened — so none of that round's guards ever reached them.
+		// .euclid(3, Infinity) crashes the process (ToInteger() maps
+		// +Infinity to math.MaxInt64, which panics "makeslice: len out of
+		// range" inside core.Pattern.Euclid, uncaught by goja); .every(NaN,
+		// fn) and friends silently return the pattern unchanged
+		// (core.Pattern.Every treats n<=0 as a no-op, and ToInteger() maps
+		// NaN/null/"banana" to 0).
+		"euclid with +Infinity pulses": `s("bd").euclid(Infinity, 8)`,
+		"euclid with +Infinity steps":  `s("bd").euclid(3, Infinity)`,
+		"euclid with NaN steps":        `s("bd").euclid(3, NaN)`,
+		"euclid with a negative steps": `s("bd").euclid(3, -1)`,
+		"every with NaN n":             `s("bd").every(NaN, function(p) { return p; })`,
+		"every with a non-numeric n":   `s("bd").every("banana", function(p) { return p; })`,
+		"every with null n":            `s("bd").every(null, function(p) { return p; })`,
+		"every with zero n":            `s("bd").every(0, function(p) { return p; })`,
+		"every with a negative n":      `s("bd").every(-1, function(p) { return p; })`,
 
 		// A round of manual probing (see task-2 report) found several
 		// numeric edge cases the NaN-only guard above didn't cover, two of
@@ -106,6 +134,26 @@ func TestChainErrorSurfacing(t *testing.T) {
 				t.Errorf("Evaluate(%q): want an error, got nil", code)
 			}
 		})
+	}
+}
+
+// TestEuclidStepsBound locks in the exact boundary euclidMaxSteps draws,
+// and — the case that actually matters — confirms a large-but-finite steps
+// value (the ~8GB-allocation case from review, .euclid(3, 1_000_000_000))
+// is rejected rather than attempted. This deliberately never runs a steps
+// value anywhere near large enough to allocate: if the bound check ever
+// regressed to a no-op, this test should fail (or hang) cleanly, not by
+// actually reproducing a multi-gigabyte allocation.
+func TestEuclidStepsBound(t *testing.T) {
+	if _, err := Evaluate(`s("bd").euclid(3, 1024)`); err != nil {
+		t.Errorf("euclid(3, 1024): want no error (at the bound), got %v", err)
+	}
+	if _, err := Evaluate(`s("bd").euclid(3, 1025)`); err == nil {
+		t.Error("euclid(3, 1025): want an error (one past the bound), got nil")
+	}
+	if _, err := Evaluate(`s("bd").euclid(3, 1000000000)`); err == nil {
+		t.Error("euclid(3, 1_000_000_000): want an error, got nil — this must be " +
+			"rejected before core.Pattern.Euclid ever reaches make([]int, steps)")
 	}
 }
 

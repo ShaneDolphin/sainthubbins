@@ -203,34 +203,51 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 	proto := vm.NewObject()
 	wrap := func(p core.Pattern) goja.Value { return vm.ToValue(newJSPattern(vm, p)) }
 
-	// requireNumber extracts a numeric argument for a numericOps entry,
+	// requireFiniteNumber extracts and validates the argument at idx,
 	// raising a TypeError for:
-	//   - a missing argument (ToFloat on the resulting undefined is NaN);
-	//   - one that doesn't convert to a number (e.g. a string like
-	//     "banana" also converts to NaN);
+	//   - a missing argument (fewer than idx+1 arguments given);
+	//   - one that doesn't convert to a number (ToFloat is NaN — e.g. a
+	//     string like "banana");
 	//   - ±Infinity — core.FractionFromFloat itself panics on a non-finite
 	//     float ("invalid float +Inf"), synchronously, inside this very JS
 	//     call; goja only recovers panics of its own error types, so an
 	//     unguarded .fast(Infinity) crashes the whole process (verified),
-	//     not just this one Evaluate call — this is the same class of bug
-	//     the timeout/interrupt handling in runtime.go exists to prevent
-	//     for a hanging script, just via a different mechanism;
-	//   - any op-specific domain rule in numericArgRules (see its comment).
+	//     not just this one Evaluate call. euclid's steps argument has the
+	//     same crash shape one step removed: ToInteger() maps +Infinity to
+	//     math.MaxInt64, which reaches make([]int, steps) in
+	//     internal/core/euclid.go and panics with "makeslice: len out of
+	//     range" — a *runtime.Error goja doesn't recognize either, so it
+	//     repanics just the same. This is the single choke point every
+	//     numeric argument in this file goes through, specifically so a
+	//     fix here can't land in numericOps (which review confirmed after
+	//     the first round) while leaving euclid/every's hand-written
+	//     argument handling uncovered (which review confirmed the second
+	//     round — euclid's steps and every's n take numeric arguments but
+	//     sit outside the numericOps table, so this check never reached
+	//     them until now).
 	// A JS boolean argument (.fast(true)) is deliberately NOT rejected
 	// here: ToFloat(true) is a well-defined, finite 1.0, matching ordinary
 	// JS arithmetic (`true + 1 === 2`) rather than this engine inventing a
 	// stricter rule departure just for chained methods.
-	requireNumber := func(name string, call goja.FunctionCall) float64 {
-		if len(call.Arguments) == 0 {
+	requireFiniteNumber := func(name string, call goja.FunctionCall, idx int) float64 {
+		if len(call.Arguments) <= idx {
 			panic(vm.NewTypeError("%s: requires a numeric argument", name))
 		}
-		v := call.Argument(0).ToFloat()
+		v := call.Argument(idx).ToFloat()
 		if math.IsNaN(v) {
-			panic(vm.NewTypeError("%s: argument %q is not a number", name, call.Argument(0).String()))
+			panic(vm.NewTypeError("%s: argument %q is not a number", name, call.Argument(idx).String()))
 		}
 		if math.IsInf(v, 0) {
 			panic(vm.NewTypeError("%s: argument must be finite, got %v", name, v))
 		}
+		return v
+	}
+
+	// requireNumber is requireFiniteNumber for a numericOps entry's single
+	// argument (always at index 0), plus that op's own domain rule from
+	// numericArgRules, if it has one (see that map's comment).
+	requireNumber := func(name string, call goja.FunctionCall) float64 {
+		v := requireFiniteNumber(name, call, 0)
 		if rule, ok := numericArgRules[name]; ok {
 			if err := rule(v); err != nil {
 				panic(vm.NewTypeError("%s: %v", name, err))
@@ -275,11 +292,32 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 	}
 
 	// euclid takes two arguments, so it is not in the numeric table.
+	//
+	// euclidMaxSteps bounds the steps argument: core.Pattern.Euclid ends up
+	// at make([]int, steps) in internal/core/euclid.go, sized by steps
+	// alone (pulses is only ever compared, never used as a length). A
+	// non-finite steps is already rejected by requireFiniteNumber above,
+	// but a merely huge *finite* value (.euclid(3, 1_000_000_000), ~8GB at
+	// 8 bytes/int) clears that check and allocates for real. Evaluate's
+	// 5-second vm.Interrupt timer cannot help here: it only preempts
+	// between JS bytecode instructions, and by the time steps reaches this
+	// handler the allocation is a native Go call already in flight, not JS
+	// the VM can interrupt — validating the argument before the call is
+	// the only available defense. 1024 is far beyond any musically
+	// meaningful Euclidean rhythm (steps is typically single digits to a
+	// few dozen) while staying trivially cheap to allocate even at the
+	// boundary.
+	const euclidMaxSteps = 1024
 	_ = proto.Set("euclid", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(vm.NewTypeError("euclid: requires two arguments (pulses, steps)"))
 		}
-		return wrap(jp.pat.Euclid(int(call.Argument(0).ToInteger()), int(call.Argument(1).ToInteger())))
+		pulses := requireFiniteNumber("euclid", call, 0)
+		steps := requireFiniteNumber("euclid", call, 1)
+		if steps < 0 || steps > euclidMaxSteps {
+			panic(vm.NewTypeError("euclid: steps must be between 0 and %d, got %v", euclidMaxSteps, steps))
+		}
+		return wrap(jp.pat.Euclid(int(pulses), int(steps)))
 	})
 
 	// every takes a cycle count and a callback, re-entered as a pattern op.
@@ -290,7 +328,17 @@ func attachMethods(vm *goja.Runtime, obj *goja.Object, jp *jsPattern) {
 		if len(call.Arguments) < 2 {
 			panic(vm.NewTypeError("every: requires two arguments (n, fn)"))
 		}
-		n := int(call.Argument(0).ToInteger())
+		nFloat := requireFiniteNumber("every", call, 0)
+		if nFloat <= 0 {
+			// core.Pattern.Every treats n <= 0 as "return the pattern
+			// unchanged" (pattern_time.go) — silent from this binding's
+			// point of view. NaN/Infinity/a non-numeric first argument are
+			// already rejected above by requireFiniteNumber; this catches
+			// the remaining silent case review found: 0, a negative
+			// number, or null (which converts to 0 via ToFloat).
+			panic(vm.NewTypeError("every: n must be a positive number, got %v", nFloat))
+		}
+		n := int(nFloat)
 		fn, ok := goja.AssertFunction(call.Argument(1))
 		if !ok {
 			panic(vm.NewTypeError("every: second argument must be a function"))
