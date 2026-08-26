@@ -15,7 +15,7 @@ import (
 	"codeberg.org/uzu/saint-hubbins/internal/audio"
 	"codeberg.org/uzu/saint-hubbins/internal/core"
 	shio "codeberg.org/uzu/saint-hubbins/internal/io"
-	"codeberg.org/uzu/saint-hubbins/internal/mini"
+	"codeberg.org/uzu/saint-hubbins/internal/jsapi"
 	"codeberg.org/uzu/saint-hubbins/internal/osc"
 	"codeberg.org/uzu/saint-hubbins/internal/session"
 	"codeberg.org/uzu/saint-hubbins/web"
@@ -112,18 +112,28 @@ func demoQuery() {
 	fmt.Printf("\n%d haps over 2 cycles\n", len(haps))
 }
 
-func demoEval(code string) {
-	mini.RegisterStringParser()
-	var pat core.Pattern
-	if p, _, err := core.Evaluate(code, nil); err == nil {
-		pat = p
-	} else {
-		pat = mini.Mini(code)
+// evalCode evaluates code via jsapi.EvaluateCode (JS first, mini-notation
+// fallback) and renders demoEval's pretty-printed JSON output. Kept separate
+// from demoEval so the JS-vs-mini wiring can be tested without depending on
+// os.Exit.
+func evalCode(code string) (string, int, error) {
+	pat, err := jsapi.EvaluateCode(code)
+	if err != nil {
+		return "", 0, err
 	}
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
 	b, _ := json.MarshalIndent(hapsToJSON(haps), "", "  ")
-	fmt.Println(string(b))
-	fmt.Printf("\n%d haps\n", len(haps))
+	return string(b), len(haps), nil
+}
+
+func demoEval(code string) {
+	out, n, err := evalCode(code)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(out)
+	fmt.Printf("\n%d haps\n", n)
 }
 
 func serve(addr string) {
@@ -134,35 +144,39 @@ func serve(addr string) {
 	}
 }
 
-func demoRender(outPath, code string) {
-	mini.RegisterStringParser()
-	var pat core.Pattern
-	if p, _, err := core.Evaluate(code, nil); err == nil {
-		pat = p
-	} else {
-		pat = mini.Mini(code)
-	}
-	if pat.Query == nil {
-		pat = core.Pure(code)
+// renderPattern evaluates code via jsapi.EvaluateCode and writes the
+// resulting audio to outPath, returning the sample count. Kept separate
+// from demoRender so the JS-vs-mini wiring can be tested without depending
+// on os.Exit.
+func renderPattern(outPath, code string) (int, error) {
+	pat, err := jsapi.EvaluateCode(code)
+	if err != nil {
+		return 0, err
 	}
 	samples, err := audio.RenderPatternAudio(pat, 4, 48000)
+	if err != nil {
+		return 0, err
+	}
+	if err := audio.WriteWAV(outPath, samples, 48000); err != nil {
+		return 0, err
+	}
+	return len(samples), nil
+}
+
+func demoRender(outPath, code string) {
+	n, err := renderPattern(outPath, code)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := audio.WriteWAV(outPath, samples, 48000); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	fmt.Printf("wrote %s (%d samples)\n", outPath, len(samples))
+	fmt.Printf("wrote %s (%d samples)\n", outPath, n)
 }
 
 // runMIDI evaluates code and writes it out as a Standard MIDI File.
 func runMIDI(code, path string, cycles int) error {
-	mini.RegisterStringParser()
-	pat, _, err := core.Evaluate(code, nil)
+	pat, err := jsapi.EvaluateCode(code)
 	if err != nil {
-		pat = mini.Mini(code)
+		return err
 	}
 	f := shio.RenderMIDI(pat, cycles, 480)
 	if err := f.Write(path); err != nil {
@@ -174,8 +188,8 @@ func runMIDI(code, path string, cycles int) error {
 		fmt.Fprintf(os.Stderr, "midi: warning: %q produced no notes — the file was written but is silent. "+
 			"This usually means the pattern has no resolvable pitches: a bare numeric token like \"0 1 2 3\" "+
 			"is a mini-notation string (a sample name), not a note. Use a bare drum name like \"bd\" instead "+
-			"(not \"bd:3\", which sets a note number, not a percussive hit), or build the pattern with the "+
-			"Go API's core.Note/core.N.\n", code)
+			"(not \"bd:3\", which sets a note number, not a percussive hit), or name the control: "+
+			"n(\"0 1 2 3\") or note(\"c3 e3 g3\") as text here, core.N/core.Note in Go.\n", code)
 	}
 	return nil
 }

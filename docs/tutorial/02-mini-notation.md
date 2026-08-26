@@ -1,7 +1,10 @@
 # 2. Mini-notation
 
-Mini-notation is the string language for rhythm. It goes inside quotes, and it
-is what `eval`, `render` and the web console accept directly.
+Mini-notation is the string language for rhythm. It goes inside quotes, and
+`eval`, `render` and the web console take it directly — type `bd sd` and it
+works. They also take JS pattern code (`s("bd sd").fast(2)`), and a string
+*inside* that code is parsed by this same grammar, so everything on this page
+applies in both places.
 
 Everything below was checked against this engine. Where the behaviour differs
 from Strudel or TidalCycles, it says so.
@@ -215,13 +218,52 @@ the first layer:
 
 ## What mini-notation cannot do
 
-It describes rhythm and pitch, and stops there. It has no volume, no filter, no
-tempo, and no way to transform a pattern.
+It describes rhythm and pitch, and stops there. There is no volume, no filter,
+no tempo, and no way to transform a pattern *in this grammar*.
+
+That used to be the end of the story for anything you typed at `eval` or the
+console. It no longer is. Those commands try your text as JavaScript first and
+fall back to this parser, so the things mini-notation cannot say, you say in
+the layer above it:
 
 ```console
 $ go run ./cmd/saint-hubbins eval 's("bd sd")'
+[
+  {
+    "part": "0/1 → 1/2",
+    "value": {
+      "s": "bd"
+    },
+    "whole": "0/1 → 1/2"
+  },
+  {
+    "part": "1/2 → 1/1",
+    "value": {
+      "s": "sd"
+    },
+    "whole": "1/2 → 1/1"
+  }
+]
+
+2 haps
 ```
 
-That does **not** work. `s(...)`, `.fast(...)` and friends are not part of this
-language; typing them gets you an event whose value is the literal text. Those
-are Go, which is [chapter 3](03-patterns-in-go.md).
+Note the difference from `eval "bd sd"` at the top of this page: the values are
+control bags (`{"s": "bd"}`), not bare strings. `s(...)` is what says "these are
+sounds".
+
+| Mini-notation can't | Type this instead |
+|---|---|
+| layer two independent patterns | `stack(s("bd*4"), s("hh*8"))` |
+| set a volume | `s("hh*8").gain(0.4)` |
+| set a filter | `s("bd*4").cutoff(400)` |
+| change tempo / speed | `s("bd sd").fast(2)` |
+| transform a pattern | `s("bd sd hh cp").rev()` |
+| vary by cycle | `s("bd*4").every(2, x => x.rev())` |
+
+A string argument in any of those is mini-notation, so the two nest rather than
+compete: `s("bd*4")`, `.gain("0.2 0.8")`, `stack("bd sd", s("hh*8"))`.
+
+The full text vocabulary — which is a curated subset, not the whole engine — is
+in [chapter 7](07-new-song-web.md#the-text-vocabulary). Everything outside it is
+Go, which is [chapter 3](03-patterns-in-go.md).

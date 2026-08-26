@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"codeberg.org/uzu/saint-hubbins/internal/core"
+	"codeberg.org/uzu/saint-hubbins/internal/jsapi"
 	"codeberg.org/uzu/saint-hubbins/internal/mini"
 	"codeberg.org/uzu/saint-hubbins/internal/osc"
 )
@@ -91,20 +92,22 @@ func (r *Session) Start(ctx context.Context) error { return r.Cyclist.Start(ctx)
 // Stop halts the scheduler.
 func (r *Session) Stop() { r.Cyclist.Stop() }
 
+// Evaluate resolves code to a Pattern via jsapi.EvaluateCode (JS first,
+// mini-notation fallback) and installs it as the session's live pattern.
+// A JS error that mini-notation cannot rescue is returned to the caller —
+// runPlay (cmd/saint-hubbins) relies on this to abort before ever touching
+// a socket, rather than silently streaming a literal-string hap or nothing
+// at all to SuperDirt.
 func (r *Session) Evaluate(code string) (core.Pattern, error) {
-	pat, _, err := core.Evaluate(code, nil)
+	pat, err := jsapi.EvaluateCode(code)
 	if err != nil {
-		pat = mini.Mini(code)
-		if pat.Query == nil {
-			pat = core.Pure(code)
-		}
-		err = nil
+		return core.Silence(), err
 	}
 	r.mu.Lock()
 	r.Pattern = pat
 	r.mu.Unlock()
 	r.Cyclist.SetPattern(pat)
-	return pat, err
+	return pat, nil
 }
 
 func (r *Session) Hush() {

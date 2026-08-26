@@ -16,11 +16,11 @@ Work through these in order. Each one is short.
 |---|------|--------------|
 | 1 | [First sounds](01-first-sounds.md) | Check the install, make your first WAV file |
 | 2 | [Mini-notation](02-mini-notation.md) | The text language for rhythm — the whole grammar |
-| 3 | [Patterns in Go](03-patterns-in-go.md) | Layering, and why real songs are written in Go |
+| 3 | [Patterns in Go](03-patterns-in-go.md) | Layering, and where text stops being enough |
 | 4 | [Controls](04-controls.md) | Pitch, volume, filter — what shapes the sound |
 | 5 | [Transformations](05-transformations.md) | How to change a pattern you already have |
 | 6 | [A new song, on the command line](06-new-song-cli.md) | Build a track from an empty file |
-| 7 | [A new song, in the web console](07-new-song-web.md) | The same, using the browser |
+| 7 | [A new song, in the web console](07-new-song-web.md) | The same, using the browser — and the full text vocabulary |
 | 8 | [Limitations](08-limitations.md) | What this engine does not do yet — read before you get stuck |
 
 ## The eight templates
@@ -46,18 +46,27 @@ See [templates/README.md](templates/README.md) for how the eight compare.
 
 ## The one thing to know first
 
-There are two ways to write patterns, and they are not equally powerful.
+There are two languages, and they nest rather than compete.
 
 **Mini-notation** is the quoted string language — `"bd*4"`, `"bd(3,8)"`. It
-describes *rhythm* and is what the `eval` command and the web console accept.
+describes *rhythm and pitch*, and nothing else.
 
-**The Go API** is everything else: layering, volume, filters, and every
-transformation. A song with more than one part is written in Go.
+**Everything around it** — what the events mean, how loud, how fast, layered
+with what — has two spellings that do the same thing:
 
-You will use both, usually in the same line — mini-notation inside a Go call:
-
-```go
-core.S(mini.Mini("bd*4"))
+```js
+stack(s("bd*4"), s("hh*8").gain(0.4))        // text: eval, render, play, console
 ```
 
-Chapter 3 explains why the split exists.
+```go
+core.Stack(                                   // Go: a song in a file
+	core.S(mini.Mini("bd*4")),
+	core.S(mini.Mini("hh*8")).Set(core.Gain(0.4)),
+)
+```
+
+Both produce the same twelve events. The text form is bounded — twelve controls
+and fourteen transforms, listed in [chapter 7](07-new-song-web.md#the-text-vocabulary)
+— and is what you sketch in. The Go form is the whole engine, and is where songs
+live. [Chapter 3](03-patterns-in-go.md) is about that boundary; chapters 4 and 5
+are in Go because that is where the full vocabulary is.

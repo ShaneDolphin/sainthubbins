@@ -49,6 +49,7 @@ The tutorial also covers [building a track from scratch](docs/tutorial/06-new-so
 
 - **Pattern engine** — exact rational timing (`Fraction`), `TimeSpan`, `Hap`, `State`, and a `Pattern` type with functor / applicative / monadic composition
 - **Mini notation** — compact string language for rhythms (`"bd sd ~"`, `"[bd sd]*2"`, `"c3 e3 g3"`, `"bd(3,8)"`)
+- **Text evaluator** — `eval`, `render`, `midi`, `play` and the console all accept JS pattern code (`s("bd sd").fast(2)`, `stack(...)`, `.gain(0.8)`) as well as bare mini-notation, resolved by `internal/jsapi`; a JS-only vocabulary of twelve controls and fourteen transforms, with anything unparseable reported as an error
 - **339 controls** — sound selection, pitch, filters, envelopes, spatialization, buses, and synthesis params, all composable via `Set`
 - **Transformation core** — time (`Slow`/`Fast`/`Early`/`Late`/`Compress`/`Zoom`), structure (`Stack`/`FastCat`/`SlowCat`/`Arrange`/`Palindrome`/`Jux`), Euclidean (`Euclid`/`Bjorklund`/`Struct`), repetition and slicing (`Ply`/`Chop`/`Striate`/`Segment`), conditional (`When`/`Every`/`Sometimes`/`Degrade`), and alignment variants
 - **Live console** — `POST /api/evaluate` and `POST /api/pianoroll` plus a single-page editor, served by `go run ./cmd/saint-hubbins serve`
@@ -107,8 +108,9 @@ actually edited instead.
 # 1. Synthetic query — stack two sound events over 2 cycles
 go run ./cmd/saint-hubbins query
 
-# 2. Evaluate a mini-notation pattern
+# 2. Evaluate a pattern — bare mini-notation, or JS pattern code
 go run ./cmd/saint-hubbins eval "bd sd"
+go run ./cmd/saint-hubbins eval 's("bd sd").fast(2).gain(0.8)'
 
 # 3. Start the live console server (http://localhost:8080)
 go run ./cmd/saint-hubbins serve
@@ -117,6 +119,7 @@ go run ./cmd/saint-hubbins serve :3000
 
 # 4. Render 4 cycles of a pattern to a WAV file
 go run ./cmd/saint-hubbins render out.wav "bd sd hh cp"
+go run ./cmd/saint-hubbins render out.wav 'stack(s("bd*4"), s("hh*8").gain(0.4))'
 ```
 
 Open `http://localhost:8080` after `serve` — the page contains an editor with **Evaluate** and **Hush** that POST to the server.
@@ -130,24 +133,86 @@ The binary is `saint-hubbins` (`./cmd/saint-hubbins`, alias `hubbins`). Six subc
 | Command | Usage | Effect |
 |---|---|---|
 | `query` | `saint-hubbins query` | Demo: `Stack(s("bd"), s("sd"))` queried over 0..2 cycles, pretty-printed JSON with `whole`, `part`, `value` |
-| `eval` | `saint-hubbins eval <code>` | Parses `<code>` as mini or control expression, queries 0..1 cycle, prints JSON |
+| `eval` | `saint-hubbins eval <code>` | Evaluates `<code>` as JS pattern code, falling back to mini-notation (see below), queries 0..1 cycle, prints JSON |
 | `serve` | `saint-hubbins serve [addr]` | Starts the console server. Default `addr` is `:8080`. |
 | `render` | `saint-hubbins render <out.wav> <code>` | Renders `<code>` for 4 cycles at 48 kHz and writes a 16-bit mono WAV |
 | `play` | `saint-hubbins play <code> [host] [port] [secs]` | Streams `<code>` to SuperDirt over OSC. Defaults: `host` `127.0.0.1`, `port` `57120`, `secs` `8`. **Requires SuperCollider with SuperDirt already running and listening on port 57120** — if you hear nothing, that is almost always why. |
 | `midi` | `saint-hubbins midi <out.mid> <code> [cycles]` | Renders `<code>` for `cycles` cycles (default 4) at 480 ticks per quarter note and writes a Standard MIDI File |
 
-`eval` and `render` accept **mini-notation** — the rhythm language documented in
-[the tutorial](docs/tutorial/02-mini-notation.md). Function-call syntax such as
-`s("bd sd")` or `.fast(2)` is *not* implemented as text: there is no script
-evaluator, so unrecognised input comes back as a literal string value. Layering,
-controls and transformations are the [Go API](docs/tutorial/03-patterns-in-go.md).
+### How `<code>` is resolved
+
+`eval`, `render`, `midi`, `play` and the console's `/api/evaluate` all take the
+same `<code>` argument and resolve it the same way, through the one function
+`internal/jsapi.EvaluateCode`:
+
+1. Run the text as **JavaScript**. If it produces a pattern, that is the answer.
+2. Otherwise parse it as **mini-notation** — the rhythm language documented in
+   [the tutorial](docs/tutorial/02-mini-notation.md). `bd sd` is not valid JS, so
+   bare mini-notation lands here.
+3. If it is neither, report the JavaScript error and exit non-zero. Bad input is
+   an error, not a hap whose value is your source text.
+
+```console
+$ saint-hubbins eval 's("bd sd")'
+[
+  {
+    "part": "0/1 → 1/2",
+    "value": {
+      "s": "bd"
+    },
+    "whole": "0/1 → 1/2"
+  },
+  {
+    "part": "1/2 → 1/1",
+    "value": {
+      "s": "sd"
+    },
+    "whole": "1/2 → 1/1"
+  }
+]
+
+2 haps
+
+$ saint-hubbins eval 's("bd" +'
+jsapi: SyntaxError: SyntaxError: (anonymous): Line 1:9 Unexpected end of input (and 1 more errors)
+$ echo $?
+1
+```
+
+### The JS vocabulary
+
+It is a real JavaScript engine (goja), so `const`, arithmetic, arrow functions
+and several statements separated by `;` all work — the value of the last
+expression is the pattern. What it is *not* is a mirror of the Go API. These are
+the names it binds, and there are no others:
+
+| Kind | Names |
+|---|---|
+| Controls — top-level constructors and chainable setters both | `s`/`sound`, `note`, `n`, `gain`, `cutoff`, `lpf`, `pan`, `room`, `speed`, `attack`, `release`, `shape` |
+| Combinators | `stack`, `cat`, `slowcat`, `fastcat`, `sequence`, `silence`, `mini` |
+| Methods, no argument | `.rev()`, `.palindrome()`, `.degrade()`, `.hush()` |
+| Methods, one number | `.fast()`, `.slow()`, `.ply()`, `.segment()`, `.late()`, `.early()`, `.degradeBy()`, `.add()` |
+| Methods, two arguments | `.euclid(pulses, steps)`, `.every(n, fn)` |
+
+A string argument anywhere in that table is mini-notation, so the two languages
+nest: `s("bd*4")`, `.gain("0.2 0.8")`, `stack("bd sd", s("hh*8"))`.
+
+Everything else is still Go: the rest of the control vocabulary (`Hpf`, `Crush`,
+`Freq`, …), `Jux`, `Chop`, `Striate`, `Struct`, `Sometimes`, `Off`, `Iter`,
+`Zoom`, `Compress`, `Arrange`, `LastOf`, the signal generators, and the
+`tonal` scale/chord helpers. See [the Go API](docs/tutorial/03-patterns-in-go.md).
 
 `play "0 1 2 3"` sends four OSC messages naming **samples** `0`, `1`, `2`, `3`
 (`s "0"`, `s "1"`, ...), not notes: mini-notation stores a bare numeric token
 as a string, so it takes the same path as `bd`, not the numeric `n` path. If
 you want a sample index, use `bd:3` (see `bd:1` in the mini-notation table
-below); if you want actual note numbers over OSC, build the pattern with the
-Go API's `core.N` instead of typing bare numbers into mini-notation.
+below); if you want the values read as note/index numbers, name the control
+instead of relying on the token. `play 'n("0 1 2 3")'` sends
+`/dirt/play n "0" cps ... delta ...` — the value is still an OSC string,
+because it came from mini-notation, but it now arrives under the `n` key
+SuperDirt reads as a number rather than the `s` key it reads as a sample name.
+`core.N` in Go does the same; `n("0 1 2 3").add(0)` makes the values genuinely
+numeric if you need that.
 
 `midi` has the same bare-numeric trap, and one MIDI-specific trap of its own:
 
@@ -156,10 +221,11 @@ Go API's `core.N` instead of typing bare numbers into mini-notation.
   numeric token is a string, not a pitch, so every hap is skipped as
   pitchless. Unlike `play`'s `bd:3` sample-index workaround, MIDI export
   needs a resolvable note: reference a bare drum name like `bd` for a
-  percussive hit, or use `core.N`/`core.Note` from the Go API for real note
-  numbers. The CLI reports the emitted note count (`wrote out.mid (1 cycles,
-  0 notes)`) and warns on stderr when it is zero, so this should not be
-  silent.
+  percussive hit, or name the control — `midi out.mid 'n("0 1 2 3")' 1`
+  writes 4 notes where `midi out.mid "0 1 2 3" 1` writes 0, and `core.N` /
+  `core.Note` do the same from Go. The CLI reports the emitted note count
+  (`wrote out.mid (1 cycles, 0 notes)`) and warns on stderr when it is zero,
+  so this should not be silent.
 - `midi out.mid "bd:3"` exports **note 3 on channel 0**, not a drum hit on
   channel 9 as `bd:3` in mini-notation table entries suggest. `HapToNote`
   resolves `n` before `s` (`bd:3` sets both `s=bd` and `n=3`), so the numeric
@@ -173,10 +239,19 @@ Go API's `core.N` instead of typing bare numbers into mini-notation.
 Examples:
 
 ```bash
+# mini-notation
 saint-hubbins eval 'bd ~ sd cp'
 saint-hubbins eval 'c3 e3 g3'
 saint-hubbins eval '[bd*4, hh*8]'
 saint-hubbins render /tmp/test.wav 'bd(3,8)'
+
+# JS pattern code
+saint-hubbins eval 's("bd sd").fast(2)'
+saint-hubbins eval 'stack(s("bd*4"), s("hh*8").gain(0.4))'
+saint-hubbins eval 'note("c3 e3 g3").slow(2)'
+saint-hubbins eval 's("bd*4").every(2, x => x.rev())'
+saint-hubbins render /tmp/test.wav 'stack(s("bd*4"), s("hh*8").gain(0.4))'
+saint-hubbins midi /tmp/test.mid 'note("c3 e3 g3")' 1
 ```
 
 ---
@@ -189,7 +264,7 @@ When `serve` is running, the server exposes:
 |---|---|---|---|
 | `GET` | `/` | — | Console HTML (editor + JS `fetch` to `/api/evaluate`) |
 | `GET` | `/health` | — | `ok` |
-| `POST` | `/api/evaluate` | `{"code":"bd sd"}` | `{"haps":[{"whole":"0/1 → 1/2","part":"0/1 → 1/2","value":"bd"}, ...]}` |
+| `POST` | `/api/evaluate` | `{"code":"bd sd"}` | `{"haps":[{"whole":"0/1 → 1/2","part":"0/1 → 1/2","value":"bd"}, ...]}`. JS code works too: `{"code":"s(\"bd sd\")"}` returns haps whose `value` is `{"s":"bd"}`. Input that is neither returns `{"haps":[],"error":"jsapi: ..."}` |
 | `POST` | `/api/pianoroll` | `{"code":"..."}` | `{"haps":[... with time/duration ...]}` queried over 0..2 cycles |
 | `GET` | `/static/*` | — | Files under `web/static/`. `saint-hubbins.wasm` and `wasm_exec.js` are build products — run `make wasm` to generate them |
 
@@ -199,6 +274,10 @@ CORS headers (`Access-Control-Allow-Origin: *`) are set for API routes; `OPTIONS
 curl -s -X POST http://localhost:8080/api/evaluate \
   -H 'Content-Type: application/json' \
   -d '{"code":"bd sd"}' | jq .
+
+curl -s -X POST http://localhost:8080/api/evaluate \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"stack(s(\"bd*4\"), s(\"hh*8\").gain(0.4))"}' | jq .
 
 curl -s -X POST http://localhost:8080/api/pianoroll \
   -H 'Content-Type: application/json' \
@@ -314,7 +393,10 @@ Go/
   internal/
     core/             # Fraction, TimeSpan, Hap, State, Pattern, controls, signals, scheduler
     mini/             # mini.Mini, parser (pigeon)
-    transpiler/       # Transpile, EvaluateJS
+    jsapi/            # goja-backed JS pattern API; EvaluateCode is the one
+                      #   JS-first / mini-notation-fallback rule every caller uses
+    transpiler/       # Transpile, EvaluateJS — a Phase-2 string transform, not
+                      #   on the evaluation path; nothing outside it imports it
     audio/            # OfflineRenderer, RenderPatternAudio, WriteWAV
     draw/             # Pianoroll, Spiral, pitch wheel, animation
     tonal/            # Scale / Chord / Voicing / Transpose

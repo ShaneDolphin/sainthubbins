@@ -11,7 +11,7 @@ import (
 	"net/http"
 
 	"codeberg.org/uzu/saint-hubbins/internal/core"
-	"codeberg.org/uzu/saint-hubbins/internal/mini"
+	"codeberg.org/uzu/saint-hubbins/internal/jsapi"
 )
 
 var consoleTemplate = template.Must(template.New("console").Parse(`<!DOCTYPE html>
@@ -33,10 +33,16 @@ footer em{color:#b5a46a}
 </head>
 <body>
 <h1>Saint Hubbins — Live Console</h1>
-<p>Go pattern engine running natively. Type <strong>mini-notation</strong> and press Evaluate to see the events (haps) it produces — these go to eleven.</p>
-<p class="hint">Try: <code>bd sd</code> &middot; <code>bd*4</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
-Layering, controls and transforms (gain, cutoff, every, jux&hellip;) are the Go API — see <code>docs/tutorial/</code>.</p>
-<textarea id="editor">[bd*4, hh*8]</textarea>
+<p>Go pattern engine running natively. Type <strong>JS pattern code</strong> or bare <strong>mini-notation</strong> and press Evaluate to see the events (haps) it produces — these go to eleven.</p>
+<p class="hint">JS: <code>s("bd*4").gain(0.8)</code> &middot; <code>stack(s("bd*4"), s("hh*8"))</code> &middot; <code>note("c3 e3 g3").slow(2)</code> &middot; <code>s("bd").euclid(3,8)</code><br>
+Mini-notation: <code>bd*4</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
+JS is tried first. The vocabulary is <code>s/sound</code>, <code>note</code>, <code>n</code>, <code>gain</code>, <code>cutoff</code>, <code>lpf</code>, <code>pan</code>, <code>room</code>, <code>speed</code>, <code>attack</code>, <code>release</code>, <code>shape</code>, the combinators <code>stack</code>, <code>cat</code>, <code>slowcat</code>, <code>fastcat</code>, <code>sequence</code>, <code>silence</code>, <code>mini</code>, and the methods <code>fast slow rev palindrome ply segment late early degrade degradeBy add euclid every hush</code> &mdash; a curated subset of the Go API, not all of it. Text that isn't valid JS is parsed as mini-notation instead; anything that is neither reports the JavaScript error. See <code>docs/tutorial/07-new-song-web.md</code>.</p>
+<textarea id="editor">// JS is tried first; text that isn't valid JS is parsed as mini-notation.
+// Try replacing all of this with just:  [bd*4, hh*8]
+stack(
+  s("bd*4"),
+  s("hh*8").gain(0.4)
+)</textarea>
 <br>
 <button onclick="evaluate()">Evaluate</button>
 <button onclick="hush()">Hush</button>
@@ -59,8 +65,8 @@ type EvaluateRequest struct {
 }
 
 type EvaluateResponse struct {
-	Haps []map[string]any `json:"haps"`
-	Error string `json:"error,omitempty"`
+	Haps  []map[string]any `json:"haps"`
+	Error string           `json:"error,omitempty"`
 }
 
 // Server is Go HTTP server serving console + API.
@@ -80,7 +86,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/api/evaluate", s.handleEvaluate)
 	mux.HandleFunc("/api/pianoroll", s.handlePianoroll)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request){ _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	// Static fallback (WASM)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	return corsMiddleware(mux)
@@ -114,22 +120,14 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	var pat core.Pattern
-	mini.RegisterStringParser()
-	code := req.Code
-	if p, _, err := core.Evaluate(code, nil); err == nil {
-		pat = p
-	} else {
-		pat = mini.Mini(code)
-		if pat.Query == nil {
-			pat = core.Pure(code)
-		}
-	}
+	// EvaluateCode already returns core.Silence() on error — no need to
+	// substitute it here too.
+	pat, err := jsapi.EvaluateCode(req.Code)
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
 	out := make([]map[string]any, len(haps))
 	for i, h := range haps {
 		m := map[string]any{
-			"part": h.Part.String(),
+			"part":  h.Part.String(),
 			"value": h.Value,
 		}
 		if h.Whole != nil {
@@ -138,6 +136,9 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		out[i] = m
 	}
 	resp := EvaluateResponse{Haps: out}
+	if err != nil {
+		resp.Error = err.Error()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -153,25 +154,18 @@ func (s *Server) handlePianoroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	mini.RegisterStringParser()
-	code := req.Code
-	var pat core.Pattern
-	if p, _, err := core.Evaluate(code, nil); err == nil {
-		pat = p
-	} else {
-		pat = mini.Mini(code)
-		if pat.Query == nil {
-			pat = core.Pure(code)
-		}
-	}
+	// EvaluateCode already returns core.Silence() on error — no need to
+	// substitute it here too.
+	pat, err := jsapi.EvaluateCode(req.Code)
 	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(2))
 	type Resp struct {
-		Haps []map[string]any `json:"haps"`
+		Haps  []map[string]any `json:"haps"`
+		Error string           `json:"error,omitempty"`
 	}
 	out := make([]map[string]any, len(haps))
 	for i, h := range haps {
 		m := map[string]any{
-			"part": h.Part.String(),
+			"part":  h.Part.String(),
 			"value": h.Value,
 		}
 		if h.Whole != nil {
@@ -181,9 +175,13 @@ func (s *Server) handlePianoroll(w http.ResponseWriter, r *http.Request) {
 		}
 		out[i] = m
 	}
+	resp := Resp{Haps: out}
+	if err != nil {
+		resp.Error = err.Error()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	_ = json.NewEncoder(w).Encode(Resp{Haps: out})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) Start() error {

@@ -80,8 +80,8 @@ func Evaluate(code string, transpiler func(string) (string, error)) (Pattern, ma
 		}
 	}
 	globalScopeMu.RUnlock()
-	if stringParser != nil {
-		miniPat := stringParser(trimmed)
+	if p := getStringParser(); p != nil {
+		miniPat := p(trimmed)
 		if miniPat.Query != nil {
 			haps := miniPat.QueryArc(FractionFromInt(0), FractionFromInt(1))
 			if len(haps) > 0 || trimmed == "~" || trimmed == "" {

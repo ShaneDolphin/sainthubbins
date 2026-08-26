@@ -70,14 +70,32 @@ check "wasm builds" bash -c '
 
 # eval: assert the JSON contains real haps carrying "bd"/"sd" values, not a
 # single hap whose value is the literal, unevaluated source string. This is
-# the gate that used to pass vacuously (see header comment above). Bare
-# mini-notation ("bd sd") is what actually evaluates today — see
-# docs/03-roadmap.md "Text evaluator" for the separately tracked gap where
-# s("bd sd") function-call syntax comes back as one literal-string hap.
-check "eval produces real haps" bash -c '
+# the gate that used to pass vacuously (see header comment above). Two forms
+# are gated, and both must pass: bare mini-notation ("bd sd") and real JS
+# pattern code (s("bd sd")) — the second check is the roadmap gate itself,
+# not a duplicate of the first: it used to be that JS function-call syntax
+# came back as one literal-string hap, tracked as a gap in
+# docs/03-roadmap.md "Text evaluator", and nothing here caught it because
+# this script only ever exercised bare mini-notation.
+check "eval produces real haps (mini-notation)" bash -c '
   out=$(go run ./cmd/saint-hubbins eval "bd sd")
   echo "$out" | grep -q "\"value\": \"bd\"" || { echo "no bd hap in output:"; echo "$out"; exit 1; }
   echo "$out" | grep -q "\"value\": \"sd\"" || { echo "no sd hap in output:"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "^2 haps$" || { echo "expected exactly 2 haps, got:"; echo "$out"; exit 1; }
+'
+
+# eval: the same assertion for real JS pattern code. s("bd sd") must
+# evaluate to two haps carrying a control bag with s:"bd" and s:"sd", not a
+# single hap whose value is the unevaluated source text. Grepping for the
+# quoted control field ("s": "bd") rather than a bare substring match on
+# "bd" is what actually rules out the literal-string-hap failure mode: the
+# literal source string `s("bd sd")` also contains the substring "bd", so a
+# looser grep would pass either way and this gate would be exactly as
+# vacuous as the one it was added to replace.
+check "eval produces real haps (JS pattern code)" bash -c '
+  out=$(go run ./cmd/saint-hubbins eval "s(\"bd sd\")")
+  echo "$out" | grep -q "\"s\": \"bd\"" || { echo "no s:bd control in output:"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "\"s\": \"sd\"" || { echo "no s:sd control in output:"; echo "$out"; exit 1; }
   echo "$out" | grep -q "^2 haps$" || { echo "expected exactly 2 haps, got:"; echo "$out"; exit 1; }
 '
 

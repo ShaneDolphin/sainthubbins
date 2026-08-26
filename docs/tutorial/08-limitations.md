@@ -48,14 +48,70 @@ produce sound by itself — it evaluates patterns and returns hap data, nothing
 more. `render` still renders to a file rather than speakers. The workflow for
 those two remains: change the file, run it, open the WAV.
 
-## The console evaluates mini-notation only
+## The text vocabulary is a subset of the engine
 
-`s("bd sd")`, `.fast(2)`, `.gain(0.5)` are **not** implemented as text. There is
-no script evaluator wired up, so anything the mini-notation parser does not
-recognise comes back as a literal string value.
+This section used to say `s("bd sd")` and `.fast(2)` were not implemented as
+text. They are now — `eval`, `render`, `midi`, `play` and the console all run
+your input as JavaScript first and fall back to the mini-notation parser. What
+remains true is that the JS vocabulary is **curated, not complete**:
 
-Layering, controls and transformations are the Go API. This is the single most
-common source of confusion — see [chapter 3](03-patterns-in-go.md).
+- **Twelve controls** are bound: `s`/`sound`, `note`, `n`, `gain`, `cutoff`,
+  `lpf`, `pan`, `room`, `speed`, `attack`, `release`, `shape`. Every other
+  control in the vocabulary — `Freq`, `Hpf`, `Crush`, `Resonance` and the
+  hundreds beyond them — is Go only.
+- **Fourteen transforms** are bound: `fast`, `slow`, `ply`, `segment`, `late`,
+  `early`, `degradeBy`, `add`, `rev`, `palindrome`, `degrade`, `hush`, `euclid`,
+  `every`. `Jux`, `Chop`, `Striate`, `Struct`, `Sometimes`, `Off`, `Iter`,
+  `Zoom`, `Compress`, `LastOf` and the rest are Go only.
+- **No signal generators and no music theory.** `.gain(sine)` is a
+  `ReferenceError`; the `tonal` scale, chord and voicing helpers have no text
+  spelling at all.
+
+The full list is [chapter 7](07-new-song-web.md#the-text-vocabulary); the
+binding tables themselves are `internal/jsapi/registry.go`. A name outside it
+raises an error rather than doing nothing quietly, so you will find the edge by
+hitting it, not by wondering — with one exception, below.
+
+### A typo inside an `every` callback is silent
+
+Everywhere else, a name the JS evaluator does not bind is a real, visible
+error: `s("bd").revv()` at the top level reports `TypeError: Object has no
+member 'revv'` and the CLI exits non-zero, the console returns an `error`
+field. Inside an `every(n, fn)` callback it does not:
+
+```
+s("bd*4").every(2, x => x.revv())
+```
+
+`eval`s cleanly, exits 0, and produces zero events on every cycle the
+callback runs on (verified: cycle 0 has 0 haps, cycle 1 — where the callback
+does not run — has the expected 4).
+
+This is not a missed case; it is a structural limit. `fn` is called lazily,
+at *query* time, from deep inside `core.Pattern.Query` — a plain Go call
+stack with no goja frame above it and no channel back to whatever called
+`Evaluate`, which may already have returned cycles ago. A Go error from
+calling the callback (which is exactly what a typo like `revv` produces) or
+a panic inside it cannot be turned into the error `Evaluate` returns, and
+panicking here is not reliably caught by anything (see
+`internal/jsapi/registry.go`'s comment on the `every` binding for why). The
+engine falls back to `core.Silence()` for that one invocation instead: a
+broken per-cycle transform shows up as an audible dropout in the rendered
+cycle, not as a crash and not as a misleading return value either.
+
+If a pattern using `every` is producing less than you expect and nothing is
+reporting an error, check the callback's method names against
+[chapter 7's vocabulary table](07-new-song-web.md#the-text-vocabulary) by
+hand — this is the one place in the text evaluator where a typo will not
+tell you.
+
+One difference in kind, not just coverage: `.fast()` takes a JavaScript number,
+so a ratio like `.fast(128/120)` is converted from a *float*, and the resulting
+event boundaries are the exact rationals of that float rather than of the ratio
+you wrote. `eval 's("bd sd").fast(2/3)'` puts the boundary at
+`4503599627370496/6004799503160661`; the same speed built in Go from
+`core.NewFraction(2, 3)` puts it at `3/4`. Whole numbers (`.fast(2)`) are exact
+either way. See [chapter 3](03-patterns-in-go.md#why-songs-are-still-go).
 
 ## Your song must live inside this repository
 
@@ -128,3 +184,6 @@ So the list above does not leave the wrong impression, these are dependable:
 - Pattern data as the real output — the full event stream, including the
   controls the sine renderer ignores, is there for MIDI, OSC and visual
   backends.
+- Bad input is reported. `eval`, `render`, `midi` and `play` exit non-zero with
+  a real message on unparseable text, and the console returns an `error` field,
+  rather than handing back a hap whose value is your source text.
