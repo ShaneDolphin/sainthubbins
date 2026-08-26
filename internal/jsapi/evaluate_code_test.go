@@ -61,6 +61,70 @@ func TestEvaluateCodeReportsErrorForBadMethod(t *testing.T) {
 	}
 }
 
+// TestZeroHapMiniNotationIsNotAnError covers mini-notation that is
+// genuinely (or just currently) silent on the one cycle EvaluateCode
+// inspects, so hapsLookGenuine has no hap value to classify at all.
+// "~ ~" is empty forever; "<~ bd>" and "bd?1" are empty on cycle 0
+// specifically (a mainstream alternation idiom, and a 100%-probability
+// degrade). All three are valid JS syntax errors and must fall back to
+// mini rather than surfacing the JS error.
+func TestZeroHapMiniNotationIsNotAnError(t *testing.T) {
+	for _, src := range []string{"~ ~", "[~ ~]", "<~ bd>", "bd?1"} {
+		t.Run(src, func(t *testing.T) {
+			if _, err := EvaluateCode(src); err != nil {
+				t.Errorf("EvaluateCode(%q) = %v, want a silent pattern, not a JS error", src, err)
+			}
+		})
+	}
+}
+
+// TestUnicodeMiniNotationAtoms covers isMiniStepChar being Unicode-aware,
+// not ASCII-only: "bä sd" is two Unicode-letter words, not garbage.
+func TestUnicodeMiniNotationAtoms(t *testing.T) {
+	pat, err := EvaluateCode("bä sd")
+	if err != nil {
+		t.Fatalf("EvaluateCode: %v", err)
+	}
+	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	if len(haps) != 2 {
+		t.Fatalf("got %d haps, want 2", len(haps))
+	}
+	if haps[0].Value != "bä" || haps[1].Value != "sd" {
+		t.Errorf("values = %v, %v, want bä, sd", haps[0].Value, haps[1].Value)
+	}
+}
+
+// TestColonSyntaxCollidingWithAControlNameIsAnError is the review's
+// concrete counterexample: "gain:0.5" is valid JS (a labeled statement),
+// fails Evaluate for an unrelated reason (a bare number is not a Pattern),
+// and mini's colon branch would otherwise happily turn it into a
+// plausible-looking control bag {"s": "gain", "n": 0.5}. Both "gain" and
+// "0.5" pass the atom charset on their own — this must be caught by the
+// control-name collision in valueLooksGenuine specifically.
+func TestColonSyntaxCollidingWithAControlNameIsAnError(t *testing.T) {
+	if _, err := EvaluateCode("gain:0.5"); err == nil {
+		t.Fatal(`EvaluateCode("gain:0.5") = nil error, want a JS error — "gain" is a control name, not a sample`)
+	}
+}
+
+// TestColonSyntaxWithARealSampleNameStillWorks guards against
+// TestColonSyntaxCollidingWithAControlNameIsAnError's fix overreaching:
+// legitimate "bd:1" sample:n syntax must still work.
+func TestColonSyntaxWithARealSampleNameStillWorks(t *testing.T) {
+	pat, err := EvaluateCode("bd:1")
+	if err != nil {
+		t.Fatalf("EvaluateCode: %v", err)
+	}
+	haps := pat.QueryArc(core.FractionFromInt(0), core.FractionFromInt(1))
+	if len(haps) != 1 {
+		t.Fatalf("got %d haps, want 1", len(haps))
+	}
+	m, ok := haps[0].Value.(map[string]any)
+	if !ok || m["s"] != "bd" {
+		t.Errorf("value = %#v, want a control bag carrying s:bd", haps[0].Value)
+	}
+}
+
 // TestMiniNotationCorpusSurvivesTheFallback locks hapsLookGenuine's charset
 // against the mini grammar it claims to mirror.
 //
