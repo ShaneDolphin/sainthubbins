@@ -188,8 +188,8 @@ func runMIDI(code, path string, cycles int) error {
 		fmt.Fprintf(os.Stderr, "midi: warning: %q produced no notes — the file was written but is silent. "+
 			"This usually means the pattern has no resolvable pitches: a bare numeric token like \"0 1 2 3\" "+
 			"is a mini-notation string (a sample name), not a note. Use a bare drum name like \"bd\" instead "+
-			"(not \"bd:3\", which sets a note number, not a percussive hit), or build the pattern with the "+
-			"Go API's core.Note/core.N.\n", code)
+			"(not \"bd:3\", which sets a note number, not a percussive hit), or name the control: "+
+			"n(\"0 1 2 3\") or note(\"c3 e3 g3\") as text here, core.N/core.Note in Go.\n", code)
 	}
 	return nil
 }

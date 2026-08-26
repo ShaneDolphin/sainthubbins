@@ -34,9 +34,15 @@ footer em{color:#b5a46a}
 <body>
 <h1>Saint Hubbins — Live Console</h1>
 <p>Go pattern engine running natively. Type <strong>JS pattern code</strong> or bare <strong>mini-notation</strong> and press Evaluate to see the events (haps) it produces — these go to eleven.</p>
-<p class="hint">Try: <code>s("bd*4").gain(0.8)</code> &middot; <code>bd*4</code> &middot; <code>bd sd</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
-JS is tried first (stack, cat, every, jux, gain, cutoff&hellip;); text that isn't valid JS but is mini-notation falls back automatically — see <code>docs/tutorial/</code>.</p>
-<textarea id="editor">stack(s("bd*4"), s("hh*8").gain(0.4))</textarea>
+<p class="hint">JS: <code>s("bd*4").gain(0.8)</code> &middot; <code>stack(s("bd*4"), s("hh*8"))</code> &middot; <code>note("c3 e3 g3").slow(2)</code> &middot; <code>s("bd").euclid(3,8)</code><br>
+Mini-notation: <code>bd*4</code> &middot; <code>bd ~ sd ~</code> &middot; <code>bd(3,8)</code> &middot; <code>&lt;bd sd&gt;</code> &middot; <code>[bd*4, hh*8]</code> &middot; <code>c3 e3 g3</code><br>
+JS is tried first. The vocabulary is <code>s/sound</code>, <code>note</code>, <code>n</code>, <code>gain</code>, <code>cutoff</code>, <code>lpf</code>, <code>pan</code>, <code>room</code>, <code>speed</code>, <code>attack</code>, <code>release</code>, <code>shape</code>, the combinators <code>stack</code>, <code>cat</code>, <code>slowcat</code>, <code>fastcat</code>, <code>sequence</code>, <code>silence</code>, <code>mini</code>, and the methods <code>fast slow rev palindrome ply segment late early degrade degradeBy add euclid every hush</code> &mdash; a curated subset of the Go API, not all of it. Text that isn't valid JS is parsed as mini-notation instead; anything that is neither reports the JavaScript error. See <code>docs/tutorial/07-new-song-web.md</code>.</p>
+<textarea id="editor">// JS is tried first; text that isn't valid JS is parsed as mini-notation.
+// Try replacing all of this with just:  [bd*4, hh*8]
+stack(
+  s("bd*4"),
+  s("hh*8").gain(0.4)
+)</textarea>
 <br>
 <button onclick="evaluate()">Evaluate</button>
 <button onclick="hush()">Hush</button>
@@ -59,8 +65,8 @@ type EvaluateRequest struct {
 }
 
 type EvaluateResponse struct {
-	Haps []map[string]any `json:"haps"`
-	Error string `json:"error,omitempty"`
+	Haps  []map[string]any `json:"haps"`
+	Error string           `json:"error,omitempty"`
 }
 
 // Server is Go HTTP server serving console + API.
@@ -80,7 +86,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/api/evaluate", s.handleEvaluate)
 	mux.HandleFunc("/api/pianoroll", s.handlePianoroll)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request){ _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	// Static fallback (WASM)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	return corsMiddleware(mux)
@@ -121,7 +127,7 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, len(haps))
 	for i, h := range haps {
 		m := map[string]any{
-			"part": h.Part.String(),
+			"part":  h.Part.String(),
 			"value": h.Value,
 		}
 		if h.Whole != nil {
@@ -159,7 +165,7 @@ func (s *Server) handlePianoroll(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, len(haps))
 	for i, h := range haps {
 		m := map[string]any{
-			"part": h.Part.String(),
+			"part":  h.Part.String(),
 			"value": h.Value,
 		}
 		if h.Whole != nil {
